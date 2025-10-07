@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administração - StokLink</title>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h1>StokLink</h1>
+            <p id="user-name" style="font-size: 14px; opacity: 0.8; margin-top: 5px;"></p>
+        </div>
+        <nav class="sidebar-nav">
+            <button id="btn-show-dashboard"><i data-lucide="layout-dashboard"></i> Dashboard</button>
+            <button id="btn-show-filiais" class="active"><i data-lucide="building-2"></i> Filiais</button>
+            <button id="btn-show-usuarios"><i data-lucide="users"></i> Usuários</button>
+            <button id="btn-show-tags"><i data-lucide="tags"></i> Tags</button>
+        </nav>
+        <div style="margin-top: auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.2);">
+            <button id="btn-voltar-sistema" style="display: flex; align-items: center; gap: 12px; width: 100%; padding: 15px; background-color: transparent; border: none; color: rgba(255,255,255,0.8); text-align: left; font-size: 16px; cursor: pointer; border-radius: 8px; transition: all 0.3s;">
+                <i data-lucide="arrow-left"></i> Voltar ao Sistema
+            </button>
+            <button id="btn-logout" style="display: flex; align-items: center; gap: 12px; width: 100%; padding: 15px; background-color: transparent; border: none; color: rgba(255,255,255,0.8); text-align: left; font-size: 16px; cursor: pointer; border-radius: 8px; transition: all 0.3s;">
+                <i data-lucide="log-out"></i> Sair
+            </button>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <!-- VISTA DE FILIAIS -->
+        <div id="filiais-view">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <div>
+                    <h2>Gerenciar Filiais</h2>
+                    <p class="subtitle">Cadastre e gerencie as filiais da sua empresa</p>
+                </div>
+                <button class="btn btn-primary" id="btn-nova-filial">
+                    <i data-lucide="plus"></i> Nova Filial
+                </button>
+            </div>
+
+            <div class="card">
+                <div id="filiais-list"></div>
+            </div>
+        </div>
+
+        <!-- VISTA DE USUÁRIOS -->
+        <div id="usuarios-view" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <div>
+                    <h2>Gerenciar Usuários</h2>
+                    <p class="subtitle">Cadastre usuários nas filiais da sua empresa</p>
+                </div>
+                <button class="btn btn-primary" id="btn-novo-usuario">
+                    <i data-lucide="user-plus"></i> Novo Usuário
+                </button>
+            </div>
+
+            <div class="card" style="margin-bottom: 20px;">
+                <div style="display: flex; gap: 15px; align-items: center;">
+                    <label style="font-weight: 500;">Filtrar por Filial:</label>
+                    <select id="filtro-filial" style="padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; flex: 1; max-width: 300px;">
+                        <option value="">Todas as filiais</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="card">
+                <div id="usuarios-list"></div>
+            </div>
+        </div>
+
+        <!-- VISTA DE TAGS -->
+        <div id="tags-view" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <div>
+                    <h2>Gerenciar Tags</h2>
+                    <p class="subtitle">Crie e gerencie as tags usadas nas transferências</p>
+                </div>
+                <button class="btn btn-primary" id="btn-nova-tag">
+                    <i data-lucide="plus"></i> Nova Tag
+                </button>
+            </div>
+
+            <div class="card">
+                <div id="tags-list"></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal para Filial -->
+    <div id="modal-filial" class="modal-overlay">
+        <div class="modal-container" style="max-width: 600px;">
+            <div class="modal-header">
+                <div class="modal-icon success">
+                    <i data-lucide="building-2"></i>
+                </div>
+                <h3 id="modal-filial-title">Nova Filial</h3>
+            </div>
+            <div class="modal-body">
+                <form id="form-filial">
+                    <div class="form-group">
+                        <label>Nome da Filial *</label>
+                        <input type="text" id="filial-nome" required placeholder="Ex: Filial São Paulo">
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Código</label>
+                            <input type="text" id="filial-codigo" placeholder="Ex: SP01">
+                        </div>
+                        <div class="form-group">
+                            <label>Telefone</label>
+                            <input type="text" id="filial-telefone" placeholder="(11) 99999-9999">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Endereço</label>
+                        <input type="text" id="filial-endereco" placeholder="Rua, Número">
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Cidade</label>
+                            <input type="text" id="filial-cidade" placeholder="São Paulo">
+                        </div>
+                        <div class="form-group">
+                            <label>Estado (UF)</label>
+                            <input type="text" id="filial-estado" maxlength="2" placeholder="SP">
+                        </div>
+                    </div>
+                    <div class="form-group" id="filial-ativo-container" style="display: none;">
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                            <input type="checkbox" id="filial-ativo" checked>
+                            Filial Ativa
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-filial-cancelar">Cancelar</button>
+                <button class="btn btn-primary" id="modal-filial-salvar">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Usuário -->
+    <div id="modal-usuario" class="modal-overlay">
+        <div class="modal-container" style="max-width: 600px;">
+            <div class="modal-header">
+                <div class="modal-icon success">
+                    <i data-lucide="user"></i>
+                </div>
+                <h3 id="modal-usuario-title">Novo Usuário</h3>
+            </div>
+            <div class="modal-body">
+                <form id="form-usuario">
+                    <div class="form-group">
+                        <label>Nome Completo *</label>
+                        <input type="text" id="usuario-nome" required placeholder="Nome do usuário">
+                    </div>
+                    <div class="form-group">
+                        <label>E-mail *</label>
+                        <input type="email" id="usuario-email" required placeholder="usuario@exemplo.com">
+                    </div>
+                    <div class="form-group">
+                        <label>Senha *</label>
+                        <input type="password" id="usuario-senha" required placeholder="Mínimo 6 caracteres" minlength="6">
+                        <small id="senha-hint">* Deixe em branco para manter a senha atual</small>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Filial *</label>
+                            <select id="usuario-filial" required>
+                                <option value="">Selecione uma filial</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Nível de Acesso *</label>
+                            <select id="usuario-role" required>
+                                <option value="operador">Operador</option>
+                                <option value="gerente">Gerente</option>
+                                <option value="admin">Administrador</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group" id="usuario-ativo-container" style="display: none;">
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                            <input type="checkbox" id="usuario-ativo" checked>
+                            Usuário Ativo
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-usuario-cancelar">Cancelar</button>
+                <button class="btn btn-primary" id="modal-usuario-salvar">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Tag -->
+    <div id="modal-tag" class="modal-overlay">
+        <div class="modal-container" style="max-width: 500px;">
+            <div class="modal-header">
+                <div class="modal-icon success">
+                    <i data-lucide="tag"></i>
+                </div>
+                <h3 id="modal-tag-title">Nova Tag</h3>
+            </div>
+            <div class="modal-body">
+                <form id="form-tag">
+                    <div class="form-group">
+                        <label>Nome da Tag *</label>
+                        <input type="text" id="tag-nome" required placeholder="Ex: Urgente, Frágil, Cliente VIP">
+                    </div>
+                    <div class="form-group">
+                        <label>Cor da Tag</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="color" id="tag-cor" value="#1e3c72" style="width: 60px; height: 40px; border: 2px solid #e0e0e0; border-radius: 8px; cursor: pointer;">
+                            <input type="text" id="tag-cor-text" value="#1e3c72" maxlength="7" pattern="^#[0-9A-Fa-f]{6}$" style="flex: 1; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-tag-cancelar">Cancelar</button>
+                <button class="btn btn-primary" id="modal-tag-salvar">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Confirmação -->
+    <div id="custom-modal" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <div class="modal-icon" id="modal-icon"></div>
+                <h3 id="modal-title">Título</h3>
+            </div>
+            <div class="modal-body">
+                <p id="modal-message">Mensagem</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-btn-cancel" style="display: none;">Cancelar</button>
+                <button class="btn btn-primary" id="modal-btn-confirm">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cadastro - StokLink</title>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .registro-container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+            max-width: 900px;
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .registro-left {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            padding: 60px 40px;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .registro-left h1 {
+            font-size: 36px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .registro-left p {
+            font-size: 18px;
+            line-height: 1.6;
+            opacity: 0.9;
+        }
+
+        .registro-right {
+            padding: 60px 40px;
+        }
+
+        .registro-right h2 {
+            font-size: 28px;
+            color: #343a40;
+            margin-bottom: 10px;
+        }
+
+        .registro-right .subtitle {
+            color: #6c757d;
+            margin-bottom: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #343a40;
+            font-weight: 500;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #1e3c72;
+        }
+
+        .btn-registro {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .btn-registro:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(30, 60, 114, 0.4);
+        }
+
+        .btn-registro:active {
+            transform: translateY(0);
+        }
+
+        .back-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .back-link a {
+            color: #1e3c72;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .back-link a:hover {
+            text-decoration: underline;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        @media (max-width: 768px) {
+            .registro-container {
+                grid-template-columns: 1fr;
+            }
+            .registro-left {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="registro-container">
+        <div class="registro-left">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <img src="logo.png" alt="StokLink" style="width: 220px; max-width: 100%; height: auto;">
+            </div>
+            <p>Faça seu cadastro e aguarde a aprovação do administrador para acessar o sistema de gestão de transferências entre filiais.</p>
+        </div>
+
+        <div class="registro-right">
+            <h2>Criar Conta</h2>
+            <p class="subtitle">Preencha seus dados para cadastro</p>
+
+            <div class="error-message" id="error-message">
+                <i data-lucide="alert-circle" style="width: 20px; height: 20px;"></i>
+                <span id="error-text"></span>
+            </div>
+
+            <div class="success-message" id="success-message">
+                <i data-lucide="check-circle" style="width: 20px; height: 20px;"></i>
+                <span id="success-text"></span>
+            </div>
+
+            <form id="registro-form">
+                <div class="form-group">
+                    <label for="nome">Nome Completo *</label>
+                    <input type="text" id="nome" required placeholder="Seu nome completo">
+                </div>
+
+                <div class="form-group">
+                    <label for="email">E-mail *</label>
+                    <input type="email" id="email" required placeholder="seu@email.com">
+                </div>
+
+                <div class="form-group">
+                    <label for="senha">Senha *</label>
+                    <input type="password" id="senha" required placeholder="Mínimo 6 caracteres" minlength="6">
+                </div>
+
+                <div class="form-group">
+                    <label for="confirmar-senha">Confirmar Senha *</label>
+                    <input type="password" id="confirmar-senha" required placeholder="Confirme sua senha">
+                </div>
+
+                <div class="form-group">
+                    <label for="empresa">Nome da Empresa *</label>
+                    <input type="text" id="empresa" required placeholder="Nome da sua empresa">
+                </div>
+
+                <button type="submit" class="btn-registro">
+                    <i data-lucide="user-plus"></i>
+                    Criar Conta
+                </button>
+            </form>
+
+            <div class="back-link">
+                <a href="login.html">
+                    <i data-lucide="arrow-left"></i>
+                    Voltar para Login
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        const form = document.getElementById('registro-form');
+        const errorMessage = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+        const successMessage = document.getElementById('success-message');
+        const successText = document.getElementById('success-text');
+
+        function showError(message) {
+            errorText.textContent = message;
+            errorMessage.style.display = 'flex';
+            successMessage.style.display = 'none';
+        }
+
+        function showSuccess(message) {
+            successText.textContent = message;
+            successMessage.style.display = 'flex';
+            errorMessage.style.display = 'none';
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const nome = document.getElementById('nome').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const senha = document.getElementById('senha').value;
+            const confirmarSenha = document.getElementById('confirmar-senha').value;
+            const empresa = document.getElementById('empresa').value.trim();
+
+            // Validações
+            if (senha !== confirmarSenha) {
+                showError('As senhas não coincidem!');
+                return;
+            }
+
+            if (senha.length < 6) {
+                showError('A senha deve ter no mínimo 6 caracteres!');
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:3001/api/auth/registrar-publico', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nome, email, senha, empresa })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    form.reset();
+                    showSuccess('Cadastro realizado com sucesso! Aguarde a aprovação do administrador para fazer login.');
+                    
+                    setTimeout(() => {
+                        window.location.href = 'login.html';
+                    }, 3000);
+                } else {
+                    showError(data.error || 'Erro ao realizar cadastro');
+                }
+            } catch (error) {
+                showError('Erro de conexão com o servidor');
+            }
+        });
+    </script>
+</body>
+</html>

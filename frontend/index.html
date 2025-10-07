@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StokLink - Sistema de Gestão Logística</title>
+    <!-- Script para os Ícones Modernos (Lucide) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Estilos CSS -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h1>StokLink</h1>
+            <p id="user-name" style="font-size: 14px; opacity: 0.8; margin-top: 5px;"></p>
+        </div>
+        <nav class="sidebar-nav">
+            <button id="btn-show-dashboard" class="active"><i data-lucide="layout-dashboard"></i> Dashboard</button>
+            <button id="btn-show-cadastro"><i data-lucide="plus-circle"></i> Nova Transferência</button>
+            <button id="btn-show-visualizacao"><i data-lucide="list"></i> Visualizar Todas</button>
+            <button id="btn-admin" style="display: none;"><i data-lucide="settings"></i> Administração</button>
+        </nav>
+        <div style="margin-top: auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.2);">
+            <button id="btn-logout" style="display: flex; align-items: center; gap: 12px; width: 100%; padding: 15px; background-color: transparent; border: none; color: rgba(255,255,255,0.8); text-align: left; font-size: 16px; cursor: pointer; border-radius: 8px; transition: all 0.3s;">
+                <i data-lucide="log-out"></i> Sair
+            </button>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <!-- VISTA DO DASHBOARD -->
+        <div id="dashboard-view">
+            <h2>Dashboard</h2>
+            <p class="subtitle">Visão geral das suas transferências.</p>
+            <div class="dashboard-summary">
+                <div class="card summary-card rascunho"><h3>RASCUNHOS</h3><div id="summary-rascunho" class="summary-count">0</div></div>
+                <div class="card summary-card pendente"><h3>PENDENTES</h3><div id="summary-pendente" class="summary-count">0</div></div>
+                <div class="card summary-card separacao"><h3>EM SEPARAÇÃO</h3><div id="summary-separacao" class="summary-count">0</div></div>
+                <div class="card summary-card lancamento"><h3>AGUARDANDO LANÇAMENTO</h3><div id="summary-lancamento" class="summary-count">0</div></div>
+            </div>
+            <div class="card">
+                <div class="card-header"><i data-lucide="archive"></i>Transferências Ativas Recentes</div>
+                <div id="dashboard-transfer-list"></div>
+            </div>
+        </div>
+
+        <!-- VISTA DE CADASTRO -->
+        <div id="cadastro-view" style="display: none;">
+            <h2>Nova Solicitação de Transferência</h2>
+            <p class="subtitle">Preencha os dados para criar uma nova transferência entre filiais.</p>
+            <form id="transfer-form">
+                <div class="card">
+                    <div class="card-header"><i data-lucide="info"></i>Informações da Transferência</div>
+                    <div class="form-grid">
+                        <div class="form-group"><label for="origem">Filial de Origem *</label><select id="origem" required><option value="">Selecione</option></select></div>
+                        <div class="form-group"><label for="destino">Filial de Destino *</label><select id="destino" required><option value="">Selecione</option></select></div>
+                        <div class="form-group"><label for="solicitante">Solicitante *</label><input type="text" id="solicitante" required placeholder="Nome do solicitante"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Tags</label>
+                        <div id="selected-tags-container" class="tags-container" style="margin-bottom: 10px;"></div>
+                        <div class="add-tag-wrapper">
+                            <input type="text" id="tag-input" list="predefined-tags" placeholder="Digite ou selecione uma tag">
+                            <datalist id="predefined-tags"></datalist>
+                            <button type="button" id="btn-add-tag" class="btn btn-secondary"><i data-lucide="plus"></i></button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header" style="justify-content: space-between;"><span><i data-lucide="boxes"></i>Itens da Transferência</span><button type="button" class="btn btn-primary" id="btn-add-item"><i data-lucide="plus"></i> Adicionar Item</button></div>
+                    <div id="itens-container"></div>
+                </div>
+                <div class="actions-footer">
+                    <button type="button" class="btn btn-secondary" id="btn-cancelar"><i data-lucide="x"></i> Cancelar</button>
+                    <button type="button" class="btn btn-info" id="btn-salvar-rascunho"><i data-lucide="save"></i> Salvar Rascunho</button>
+                    <button type="submit" class="btn btn-primary"><i data-lucide="send"></i> Enviar Solicitação</button>
+                </div>
+            </form>
+        </div>
+        
+        <!-- VISTA DE VISUALIZAÇÃO -->
+        <div id="visualizacao-view" style="display: none;">
+            <h2>Todas as Transferências</h2>
+            <p class="subtitle">Gerencie o histórico completo de transferências.</p>
+            <div class="card">
+                <div id="transfer-list-container"></div>
+            </div>
+        </div>
+
+        <!-- VISTA DE DETALHES -->
+        <div id="detalhe-view" style="display: none;">
+            <div id="detalhe-header">
+                <div><h2 id="detalhe-id"></h2><p class="subtitle">Detalhes da transferência</p></div>
+                <div id="detalhe-status-tag"></div>
+            </div>
+            <div class="card">
+                 <div class="card-header"><i data-lucide="info"></i>Informações da Transferência</div>
+                 <div class="info-grid">
+                    <div class="info-item"><strong>Origem:</strong> <span id="detalhe-origem"></span></div>
+                    <div class="info-item"><strong>Destino:</strong> <span id="detalhe-destino"></span></div>
+                    <div class="info-item"><strong>Solicitante:</strong> <span id="detalhe-solicitante"></span></div>
+                    <div class="info-item"><strong>Data:</strong> <span id="detalhe-data"></span></div>
+                    <div class="info-item" id="detalhe-interno-wrapper" style="display: none;"><strong>Nº Transf. Interna:</strong> <span id="detalhe-interno"></span></div>
+                    <div class="info-item" id="detalhe-obs-wrapper" style="display: none;"><strong>Tags:</strong><div id="detalhe-observacao" class="tags-container"></div></div>
+                 </div>
+            </div>
+            <div class="card">
+                <div class="card-header"><i data-lucide="boxes"></i>Itens da Transferência</div>
+                <div id="detalhe-itens-lista"></div>
+            </div>
+            <div class="card">
+                <div class="card-header"><i data-lucide="check-square"></i>Ações Disponíveis</div>
+                <div id="detalhe-acoes"></div>
+            </div>
+            <div class="actions-footer">
+                <button class="btn btn-secondary" id="btn-voltar-lista"><i data-lucide="arrow-left"></i> Voltar</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal Personalizado -->
+    <div id="custom-modal" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <div class="modal-icon" id="modal-icon"></div>
+                <h3 id="modal-title">Título</h3>
+            </div>
+            <div class="modal-body">
+                <p id="modal-message">Mensagem</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-btn-cancel" style="display: none;">Cancelar</button>
+                <button class="btn btn-primary" id="modal-btn-confirm">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script JavaScript -->
+    <script src="app.js"></script>
+</body>
+</html>
