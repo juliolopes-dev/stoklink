@@ -2,7 +2,7 @@
 // CONFIGURAÇÃO DA API
 // ====================================
 
-const API_URL = 'http://localhost:3001';
+const API_URL = window.location.origin;
 
 // Função auxiliar para fazer requisições autenticadas
 async function apiFetch(endpoint, options = {}) {
