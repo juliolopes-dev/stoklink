@@ -269,11 +269,11 @@ p.subtitle {
     padding: 5px 12px; border-radius: 15px; color: white; font-weight: 500;
     font-size: 14px; text-align: center; display: inline-block;
 }
-.status-rascunho { background-color: #607d8b; color: rgb(255, 255, 255);}
-.status-pendente { background-color: #c62828; color: rgb(255, 255, 255);}
-.status-em-separacao { background-color: #4caf50; color: rgb(255, 255, 255);}
-.status-aguardando-lancamento { background-color: #f57c00; color: rgb(255, 255, 255); }
-.status-concluido { background-color: #1976d2; color: rgb(255, 255, 255);}
+.status-rascunho { background-color: #607d8b; color: rgb(255, 255, 255) !important;}
+.status-pendente { background-color: #c62828; color: rgb(255, 255, 255) !important;}
+.status-em-separacao { background-color: #4caf50; color: rgb(255, 255, 255) !important;}
+.status-aguardando-lancamento { background-color: #f57c00; color: rgb(255, 255, 255) !important; }
+.status-concluido { background-color: #1976d2; color: rgb(255, 255, 255) !important;}
 
 /* Estilos para ícones */
 i[data-lucide] {
