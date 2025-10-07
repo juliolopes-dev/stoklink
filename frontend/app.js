@@ -719,6 +719,123 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // --- Filtros ---
+    const filtroTag = document.getElementById('filtro-tag');
+    const filtroFilial = document.getElementById('filtro-filial');
+    const filtroProduto = document.getElementById('filtro-produto');
+    const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
+    const btnLimparFiltros = document.getElementById('btn-limpar-filtros');
+    
+    // Popular selects de filtro
+    function popularFiltros() {
+        // Popular tags
+        filtroTag.innerHTML = '<option value="">Todas as Tags</option>';
+        globalTags.forEach(tag => {
+            const option = document.createElement('option');
+            option.value = tag;
+            option.textContent = tag;
+            filtroTag.appendChild(option);
+        });
+        
+        // Popular filiais
+        const selectOrigem = document.getElementById('origem');
+        filtroFilial.innerHTML = '<option value="">Todas as Filiais</option>';
+        Array.from(selectOrigem.options).forEach(opt => {
+            if (opt.value) {
+                const option = document.createElement('option');
+                option.value = opt.value;
+                option.textContent = opt.textContent;
+                filtroFilial.appendChild(option);
+            }
+        });
+    }
+    
+    // Aplicar filtros
+    function aplicarFiltros() {
+        const tagSelecionada = filtroTag.value.toLowerCase();
+        const filialSelecionada = filtroFilial.value.toLowerCase();
+        const produtoDigitado = filtroProduto.value.toLowerCase().trim();
+        
+        const filtrados = transferencias.filter(t => {
+            // Filtro por tag
+            if (tagSelecionada && (!t.tags || !t.tags.some(tag => tag.toLowerCase() === tagSelecionada))) {
+                return false;
+            }
+            
+            // Filtro por filial (origem OU destino)
+            if (filialSelecionada && 
+                t.origem.toLowerCase() !== filialSelecionada && 
+                t.destino.toLowerCase() !== filialSelecionada) {
+                return false;
+            }
+            
+            // Filtro por código de produto
+            if (produtoDigitado && (!t.itens || !t.itens.some(item => 
+                item.codigo.toLowerCase().includes(produtoDigitado)))) {
+                return false;
+            }
+            
+            return true;
+        });
+        
+        // Renderizar resultados filtrados
+        renderTransferListFiltrada(filtrados);
+    }
+    
+    // Renderizar lista filtrada
+    function renderTransferListFiltrada(data) {
+        transferListContainer.innerHTML = '';
+        
+        if (data.length === 0) {
+            transferListContainer.innerHTML = '<p style="text-align: center; padding: 40px; color: #6c757d;">Nenhuma transferência encontrada com os filtros aplicados.</p>';
+            return;
+        }
+        
+        data.forEach(t => {
+            const card = document.createElement('div');
+            card.className = 'card transfer-card';
+            card.dataset.id = t.id;
+            const statusInfo = getStatusInfo(t.status);
+            card.innerHTML = `
+                <strong>${t.id}</strong>
+                <div><strong>Origem:</strong><span> ${t.origem}</span></div>
+                <div><strong>Destino:</strong><span> ${t.destino}</span></div>
+                <div><strong>Solicitante:</strong><span> ${t.solicitante}</span></div>
+                <div class="tags-container">${renderTags(t.tags)}</div>
+                <span class="status-tag ${statusInfo.className}">${statusInfo.text}</span>`;
+            card.addEventListener('click', () => {
+                previousView = 'visualizacao';
+                showDetalhes(t.id);
+            });
+            transferListContainer.appendChild(card);
+        });
+        
+        lucide.createIcons();
+    }
+    
+    // Limpar filtros
+    function limparFiltros() {
+        filtroTag.value = '';
+        filtroFilial.value = '';
+        filtroProduto.value = '';
+        renderTransferList(transferListContainer);
+    }
+    
+    // Event listeners dos filtros
+    btnAplicarFiltros.addEventListener('click', aplicarFiltros);
+    btnLimparFiltros.addEventListener('click', limparFiltros);
+    filtroProduto.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') aplicarFiltros();
+    });
+    
+    // Popular filtros quando tags e filiais carregarem
+    const popularFiltrosTimeout = setInterval(() => {
+        if (globalTags.length > 0 && document.getElementById('origem').options.length > 1) {
+            popularFiltros();
+            clearInterval(popularFiltrosTimeout);
+        }
+    }, 500);
+    
     // --- Inicialização ---
     adicionarItem();
     carregarTags();

@@ -84,6 +84,34 @@
         <div id="visualizacao-view" style="display: none;">
             <h2>Todas as Transferências</h2>
             <p class="subtitle">Gerencie o histórico completo de transferências.</p>
+            
+            <!-- Filtros -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header"><i data-lucide="filter"></i>Filtros de Pesquisa</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="filtro-tag">Tag</label>
+                        <select id="filtro-tag">
+                            <option value="">Todas as Tags</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="filtro-filial">Filial (Origem ou Destino)</label>
+                        <select id="filtro-filial">
+                            <option value="">Todas as Filiais</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="filtro-produto">Código do Produto</label>
+                        <input type="text" id="filtro-produto" placeholder="Digite o código do produto">
+                    </div>
+                </div>
+                <div class="actions-footer" style="margin-top: 10px;">
+                    <button type="button" class="btn btn-secondary" id="btn-limpar-filtros"><i data-lucide="x"></i> Limpar Filtros</button>
+                    <button type="button" class="btn btn-primary" id="btn-aplicar-filtros"><i data-lucide="search"></i> Aplicar Filtros</button>
+                </div>
+            </div>
+            
             <div class="card">
                 <div id="transfer-list-container"></div>
             </div>
