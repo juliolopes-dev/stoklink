@@ -269,11 +269,11 @@ p.subtitle {
     padding: 5px 12px; border-radius: 15px; color: white; font-weight: 500;
     font-size: 14px; text-align: center; display: inline-block;
 }
-.status-rascunho { background-color: #6c757d; }
-.status-pendente { background-color: #ffc107; }
-.status-em_separacao { background-color: #0dcaf0; }
-.status-aguardando_lancamento { background-color: #fd7e14; }
-.status-concluido { background-color: #198754; }
+.status-rascunho { background-color: #607d8b; }
+.status-pendente { background-color: #c62828; }
+.status-em-separacao { background-color: #4caf50; }
+.status-aguardando-lancamento { background-color: #f57c00; }
+.status-concluido { background-color: #1976d2; }
 
 /* Estilos para ícones */
 i[data-lucide] {
