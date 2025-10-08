@@ -584,6 +584,39 @@ document.addEventListener('DOMContentLoaded', function() {
         const itemRow = document.createElement('div');
         itemRow.className = 'item-row';
         itemRow.innerHTML = `<div class="form-group"><label>Código do Produto *</label><input type="text" class="item-codigo" required placeholder="Código do produto"></div><div class="form-group"><label>Qtd. Solicitada *</label><input type="number" class="item-quantidade" required min="1" placeholder="Ex: 10"></div><button type="button" class="btn-remover-item"><i data-lucide="trash-2"></i></button>`;
+        
+        // Adicionar validação de produto duplicado
+        const codigoInput = itemRow.querySelector('.item-codigo');
+        codigoInput.addEventListener('blur', async () => {
+            const codigo = codigoInput.value.trim();
+            const destino = document.getElementById('destino').value;
+            
+            if (!codigo || !destino) return;
+            
+            try {
+                const response = await apiFetch(`/api/verificar-produto/${encodeURIComponent(codigo)}/${encodeURIComponent(destino)}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    if (data.duplicado) {
+                        const confirmado = await showConfirm(
+                            data.mensagem + '\n\nDeseja adicionar mesmo assim?',
+                            'Produto em Transferência Ativa',
+                            'warning'
+                        );
+                        
+                        if (!confirmado) {
+                            codigoInput.value = '';
+                            codigoInput.focus();
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Erro ao verificar produto:', error);
+            }
+        });
+        
         itemRow.querySelector('.btn-remover-item').addEventListener('click', () => itemRow.remove());
         itensContainer.appendChild(itemRow);
         lucide.createIcons();

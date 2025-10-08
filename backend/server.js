@@ -221,6 +221,49 @@ app.get('/api/transferencias/:id', verificarToken, async (req, res) => {
     }
 });
 
+// GET - Verificar se produto já está em transferência ativa para o destino
+app.get('/api/verificar-produto/:codigo/:destino', verificarToken, async (req, res) => {
+    try {
+        const { codigo, destino } = req.params;
+        const empresa_id = req.usuario.empresa_id;
+        
+        const [rows] = await db.query(`
+            SELECT t.id, t.origem, t.destino, t.status, it.quantidade_solicitada
+            FROM itens_transferencia it
+            INNER JOIN transferencias t ON it.transferencia_id = t.id
+            WHERE it.codigo_produto = ?
+              AND t.destino = ?
+              AND t.empresa_id = ?
+              AND t.status IN ('pendente', 'em_separacao', 'aguardando_lancamento', 'concluido')
+            ORDER BY t.created_at DESC
+            LIMIT 1
+        `, [codigo, destino, empresa_id]);
+        
+        if (rows.length > 0) {
+            const transferencia = rows[0];
+            const statusTexto = {
+                'pendente': 'Pendente',
+                'em_separacao': 'Em Separação',
+                'aguardando_lancamento': 'Aguardando Lançamento',
+                'concluido': 'Concluído'
+            }[transferencia.status] || transferencia.status;
+            
+            return res.json({
+                duplicado: true,
+                transferencia_id: transferencia.id,
+                status: statusTexto,
+                quantidade: transferencia.quantidade_solicitada,
+                mensagem: `Este produto já está na transferência ${transferencia.id} (Status: ${statusTexto}) para o destino ${transferencia.destino}.`
+            });
+        }
+        
+        res.json({ duplicado: false });
+    } catch (error) {
+        console.error('Erro ao verificar produto:', error);
+        res.status(500).json({ error: 'Erro ao verificar produto' });
+    }
+});
+
 // POST - Criar nova transferência
 app.post('/api/transferencias', verificarToken, async (req, res) => {
     const { id, origem, destino, solicitante, data, status, tags, itens } = req.body;
