@@ -866,6 +866,8 @@ app.post('/api/mensagens', verificarToken, async (req, res) => {
         const empresa_id = req.usuario.empresa_id;
         const usuario_id = req.usuario.id;
         
+        console.log('📨 Nova mensagem:', { empresa_id, usuario_id, mensagem: mensagem?.substring(0, 50) });
+        
         if (!mensagem || mensagem.trim().length === 0) {
             return res.status(400).json({ error: 'Mensagem não pode ser vazia' });
         }
@@ -879,6 +881,8 @@ app.post('/api/mensagens', verificarToken, async (req, res) => {
             [empresa_id, usuario_id, mensagem.trim()]
         );
         
+        console.log('✅ Mensagem inserida, ID:', result.insertId);
+        
         // Buscar a mensagem recém-criada com dados do usuário
         const [mensagens] = await db.query(`
             SELECT m.id, m.mensagem, m.created_at,
@@ -890,8 +894,9 @@ app.post('/api/mensagens', verificarToken, async (req, res) => {
         
         res.status(201).json(mensagens[0]);
     } catch (error) {
-        console.error('Erro ao enviar mensagem:', error);
-        res.status(500).json({ error: 'Erro ao enviar mensagem' });
+        console.error('❌ Erro ao enviar mensagem:', error);
+        console.error('Stack:', error.stack);
+        res.status(500).json({ error: 'Erro ao enviar mensagem', detalhes: error.message });
     }
 });
 

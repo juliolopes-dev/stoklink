@@ -1061,7 +1061,12 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        const usuarioId = JSON.parse(localStorage.getItem('usuario')).id;
+        const usuario = JSON.parse(localStorage.getItem('usuario'));
+        if (!usuario || !usuario.id) {
+            console.error('Usuário não encontrado no localStorage');
+            return;
+        }
+        const usuarioId = usuario.id;
         
         chatMessages.innerHTML = mensagens.map(msg => {
             const isOwn = msg.usuario_id === usuarioId;
@@ -1099,10 +1104,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 ultimoIdMensagem = novaMensagem.id;
                 renderizarMensagens();
                 chatInput.value = '';
+            } else {
+                const errorData = await response.json();
+                console.error('Erro do servidor:', errorData);
+                await showAlert(errorData.error || 'Erro ao enviar mensagem', 'Erro', 'danger');
             }
         } catch (error) {
             console.error('Erro ao enviar mensagem:', error);
-            await showAlert('Erro ao enviar mensagem', 'Erro', 'danger');
+            await showAlert('Erro de conexão com o servidor', 'Erro', 'danger');
         }
     }
     
