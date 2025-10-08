@@ -92,6 +92,14 @@ app.get('/api/auth/me', verificarToken, async (req, res) => {
         }
 
         const usuario = usuarios[0];
+        
+        console.log('🔍 DEBUG /api/auth/me:', {
+            usuarioId: req.usuario.id,
+            filial: usuario.filial,
+            filialIsNull: usuario.filial === null,
+            dados: usuario
+        });
+        
         res.json({
             id: usuario.id,
             nome: usuario.nome,
@@ -106,6 +114,22 @@ app.get('/api/auth/me', verificarToken, async (req, res) => {
     } catch (error) {
         console.error('Erro ao buscar dados do usuário:', error);
         res.status(500).json({ error: 'Erro ao buscar dados do usuário' });
+    }
+});
+
+// DEBUG - Ver estrutura da tabela usuarios (REMOVER DEPOIS)
+app.get('/api/debug/usuarios-estrutura', verificarToken, async (req, res) => {
+    try {
+        const [estrutura] = await db.query('DESCRIBE usuarios');
+        const [meuUsuario] = await db.query('SELECT * FROM usuarios WHERE id = ?', [req.usuario.id]);
+        
+        res.json({
+            estruturaTabela: estrutura,
+            meusDados: meuUsuario[0],
+            temCampoFilial: estrutura.some(col => col.Field === 'filial')
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
