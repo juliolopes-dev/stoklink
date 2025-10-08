@@ -1001,15 +1001,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // Carregar filiais no select do chat
     async function carregarFiliaisChat() {
         try {
-            // Pegar filial do usuário logado
-            let usuario = JSON.parse(localStorage.getItem('usuario'));
+            // Pegar filial do usuário logado (USAR O NOME CORRETO!)
+            let usuario = JSON.parse(localStorage.getItem('stoklink_user'));
             
             console.log('═══════════════════════════════════════════');
             console.log('🔍 DEBUG CHAT - INFORMAÇÕES DO USUÁRIO');
             console.log('═══════════════════════════════════════════');
             console.log('📦 Usuário completo do localStorage:', usuario);
             console.log('📍 Filial no localStorage:', usuario?.filial);
-            console.log('🔑 Token existe:', !!localStorage.getItem('token'));
+            console.log('🔑 Token existe:', !!localStorage.getItem('stoklink_token'));
             console.log('═══════════════════════════════════════════');
             
             // Se não tem filial no localStorage, buscar do backend
@@ -1026,7 +1026,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         
                         if (userData.filial) {
                             usuario.filial = userData.filial;
-                            localStorage.setItem('usuario', JSON.stringify(usuario));
+                            localStorage.setItem('stoklink_user', JSON.stringify(usuario));
                             console.log('✅ Filial atualizada no localStorage:', userData.filial);
                         } else {
                             console.error('⚠️ Servidor retornou dados mas sem filial!');
@@ -1180,7 +1180,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        const usuario = JSON.parse(localStorage.getItem('usuario'));
+        const usuario = JSON.parse(localStorage.getItem('stoklink_user'));
         if (!usuario || !usuario.id) {
             console.error('Usuário não encontrado no localStorage');
             return;
