@@ -1025,11 +1025,15 @@ document.addEventListener('DOMContentLoaded', function() {
             const url = apenasNovas && ultimoIdMensagem > 0 
                 ? `/api/mensagens?ultimoId=${ultimoIdMensagem}` 
                 : '/api/mensagens';
+            
+            console.log('📥 Carregando mensagens:', url);
                 
             const response = await apiFetch(url);
             
             if (response.ok) {
                 const novasMensagens = await response.json();
+                
+                console.log(`✅ ${novasMensagens.length} mensagens recebidas`);
                 
                 if (novasMensagens.length > 0) {
                     if (apenasNovas) {
@@ -1045,12 +1049,21 @@ document.addEventListener('DOMContentLoaded', function() {
                         mensagens = novasMensagens;
                     }
                     
-                    ultimoIdMensagem = Math.max(...mensagens.map(m => m.id));
-                    renderizarMensagens();
+                    if (mensagens.length > 0) {
+                        ultimoIdMensagem = Math.max(...mensagens.map(m => m.id));
+                    }
                 }
+                
+                // SEMPRE renderizar, mesmo se não tiver mensagens novas
+                renderizarMensagens();
+            } else {
+                const errorData = await response.json();
+                console.error('❌ Erro ao buscar mensagens:', errorData);
+                chatMessages.innerHTML = '<p style="text-align: center; color: #dc3545; padding: 20px;">Erro ao carregar mensagens</p>';
             }
         } catch (error) {
-            console.error('Erro ao carregar mensagens:', error);
+            console.error('❌ Erro ao carregar mensagens:', error);
+            chatMessages.innerHTML = '<p style="text-align: center; color: #dc3545; padding: 20px;">Erro de conexão</p>';
         }
     }
     

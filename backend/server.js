@@ -830,6 +830,8 @@ app.get('/api/mensagens', verificarToken, async (req, res) => {
         const limite = parseInt(req.query.limite) || 50;
         const ultimoId = parseInt(req.query.ultimoId) || 0;
         
+        console.log('📥 Buscando mensagens:', { empresa_id, limite, ultimoId });
+        
         let query = `
             SELECT m.id, m.mensagem, m.created_at,
                    u.nome as usuario_nome, u.id as usuario_id
@@ -849,13 +851,19 @@ app.get('/api/mensagens', verificarToken, async (req, res) => {
         query += ' ORDER BY m.created_at DESC LIMIT ?';
         params.push(limite);
         
+        console.log('🔍 Query:', query);
+        console.log('🔍 Params:', params);
+        
         const [mensagens] = await db.query(query, params);
+        
+        console.log(`✅ ${mensagens.length} mensagens encontradas`);
         
         // Inverter ordem para exibir do mais antigo para o mais novo
         res.json(mensagens.reverse());
     } catch (error) {
-        console.error('Erro ao buscar mensagens:', error);
-        res.status(500).json({ error: 'Erro ao buscar mensagens' });
+        console.error('❌ Erro ao buscar mensagens:', error);
+        console.error('Stack:', error.stack);
+        res.status(500).json({ error: 'Erro ao buscar mensagens', detalhes: error.message });
     }
 });
 
