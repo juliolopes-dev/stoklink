@@ -978,6 +978,163 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }, 500);
     
+    // ========================================
+    // CHAT ENTRE FILIAIS
+    // ========================================
+    
+    const chatToggle = document.getElementById('chat-toggle');
+    const chatModal = document.getElementById('chat-modal');
+    const chatClose = document.getElementById('chat-close');
+    const chatMessages = document.getElementById('chat-messages');
+    const chatInput = document.getElementById('chat-input');
+    const chatSend = document.getElementById('chat-send');
+    const chatBadge = document.getElementById('chat-badge');
+    
+    let mensagens = [];
+    let chatAberto = false;
+    let ultimoIdMensagem = 0;
+    let pollingInterval = null;
+    
+    // Abrir/fechar chat
+    chatToggle.addEventListener('click', () => {
+        chatAberto = !chatAberto;
+        chatModal.classList.toggle('active');
+        
+        if (chatAberto) {
+            carregarMensagens();
+            iniciarPolling();
+            chatBadge.style.display = 'none';
+            chatBadge.textContent = '0';
+            chatInput.focus();
+        } else {
+            pararPolling();
+        }
+        
+        lucide.createIcons();
+    });
+    
+    chatClose.addEventListener('click', () => {
+        chatAberto = false;
+        chatModal.classList.remove('active');
+        pararPolling();
+    });
+    
+    // Carregar mensagens
+    async function carregarMensagens(apenasNovas = false) {
+        try {
+            const url = apenasNovas && ultimoIdMensagem > 0 
+                ? `/api/mensagens?ultimoId=${ultimoIdMensagem}` 
+                : '/api/mensagens';
+                
+            const response = await apiFetch(url);
+            
+            if (response.ok) {
+                const novasMensagens = await response.json();
+                
+                if (novasMensagens.length > 0) {
+                    if (apenasNovas) {
+                        mensagens = [...mensagens, ...novasMensagens];
+                        
+                        // Atualizar badge se chat está fechado
+                        if (!chatAberto) {
+                            const badgeCount = parseInt(chatBadge.textContent) || 0;
+                            chatBadge.textContent = badgeCount + novasMensagens.length;
+                            chatBadge.style.display = 'flex';
+                        }
+                    } else {
+                        mensagens = novasMensagens;
+                    }
+                    
+                    ultimoIdMensagem = Math.max(...mensagens.map(m => m.id));
+                    renderizarMensagens();
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao carregar mensagens:', error);
+        }
+    }
+    
+    // Renderizar mensagens
+    function renderizarMensagens() {
+        if (mensagens.length === 0) {
+            chatMessages.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">Nenhuma mensagem ainda. Seja o primeiro a conversar!</p>';
+            return;
+        }
+        
+        const usuarioId = JSON.parse(localStorage.getItem('usuario')).id;
+        
+        chatMessages.innerHTML = mensagens.map(msg => {
+            const isOwn = msg.usuario_id === usuarioId;
+            const data = new Date(msg.created_at);
+            const hora = data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            
+            return `
+                <div class="chat-message ${isOwn ? 'own' : 'other'}">
+                    ${!isOwn ? `<div class="chat-message-header">${msg.usuario_nome}</div>` : ''}
+                    <div class="chat-message-content">${msg.mensagem}</div>
+                    <div class="chat-message-time">${hora}</div>
+                </div>
+            `;
+        }).join('');
+        
+        // Scroll para o final
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    // Enviar mensagem
+    async function enviarMensagem() {
+        const mensagem = chatInput.value.trim();
+        
+        if (!mensagem) return;
+        
+        try {
+            const response = await apiFetch('/api/mensagens', {
+                method: 'POST',
+                body: JSON.stringify({ mensagem })
+            });
+            
+            if (response.ok) {
+                const novaMensagem = await response.json();
+                mensagens.push(novaMensagem);
+                ultimoIdMensagem = novaMensagem.id;
+                renderizarMensagens();
+                chatInput.value = '';
+            }
+        } catch (error) {
+            console.error('Erro ao enviar mensagem:', error);
+            await showAlert('Erro ao enviar mensagem', 'Erro', 'danger');
+        }
+    }
+    
+    chatSend.addEventListener('click', enviarMensagem);
+    
+    chatInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            enviarMensagem();
+        }
+    });
+    
+    // Polling (buscar novas mensagens a cada 3 segundos)
+    function iniciarPolling() {
+        pollingInterval = setInterval(() => {
+            carregarMensagens(true);
+        }, 3000);
+    }
+    
+    function pararPolling() {
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+        }
+    }
+    
+    // Buscar mensagens novas mesmo com chat fechado (a cada 10 segundos)
+    setInterval(() => {
+        if (!chatAberto) {
+            carregarMensagens(true);
+        }
+    }, 10000);
+
     // --- Inicialização ---
     adicionarItem();
     carregarTags();

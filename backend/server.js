@@ -820,6 +820,82 @@ app.get('/api/health', (req, res) => {
 });
 
 // ========================================
+// ROTAS DE CHAT
+// ========================================
+
+// GET - Buscar mensagens do chat da empresa
+app.get('/api/mensagens', verificarToken, async (req, res) => {
+    try {
+        const empresa_id = req.usuario.empresa_id;
+        const limite = parseInt(req.query.limite) || 50;
+        const ultimoId = parseInt(req.query.ultimoId) || 0;
+        
+        let query = `
+            SELECT m.id, m.mensagem, m.created_at,
+                   u.nome as usuario_nome, u.id as usuario_id
+            FROM mensagens m
+            INNER JOIN usuarios u ON m.usuario_id = u.id
+            WHERE m.empresa_id = ?
+        `;
+        
+        const params = [empresa_id];
+        
+        // Se tem ultimoId, buscar apenas mensagens novas
+        if (ultimoId > 0) {
+            query += ' AND m.id > ?';
+            params.push(ultimoId);
+        }
+        
+        query += ' ORDER BY m.created_at DESC LIMIT ?';
+        params.push(limite);
+        
+        const [mensagens] = await db.query(query, params);
+        
+        // Inverter ordem para exibir do mais antigo para o mais novo
+        res.json(mensagens.reverse());
+    } catch (error) {
+        console.error('Erro ao buscar mensagens:', error);
+        res.status(500).json({ error: 'Erro ao buscar mensagens' });
+    }
+});
+
+// POST - Enviar mensagem no chat
+app.post('/api/mensagens', verificarToken, async (req, res) => {
+    try {
+        const { mensagem } = req.body;
+        const empresa_id = req.usuario.empresa_id;
+        const usuario_id = req.usuario.id;
+        
+        if (!mensagem || mensagem.trim().length === 0) {
+            return res.status(400).json({ error: 'Mensagem não pode ser vazia' });
+        }
+        
+        if (mensagem.length > 1000) {
+            return res.status(400).json({ error: 'Mensagem muito longa (máximo 1000 caracteres)' });
+        }
+        
+        const [result] = await db.query(
+            'INSERT INTO mensagens (empresa_id, usuario_id, mensagem) VALUES (?, ?, ?)',
+            [empresa_id, usuario_id, mensagem.trim()]
+        );
+        
+        // Buscar a mensagem recém-criada com dados do usuário
+        const [mensagens] = await db.query(`
+            SELECT m.id, m.mensagem, m.created_at,
+                   u.nome as usuario_nome, u.id as usuario_id
+            FROM mensagens m
+            INNER JOIN usuarios u ON m.usuario_id = u.id
+            WHERE m.id = ?
+        `, [result.insertId]);
+        
+        res.status(201).json(mensagens[0]);
+    } catch (error) {
+        console.error('Erro ao enviar mensagem:', error);
+        res.status(500).json({ error: 'Erro ao enviar mensagem' });
+    }
+});
+
+// ========================================
 // INICIAR SERVIDOR
 // ========================================
 

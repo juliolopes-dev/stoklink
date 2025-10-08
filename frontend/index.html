@@ -185,6 +185,34 @@
         </div>
     </div>
 
+    <!-- Botão Flutuante de Chat -->
+    <button id="chat-toggle" class="chat-toggle">
+        <i data-lucide="message-circle"></i>
+        <span id="chat-badge" class="chat-badge" style="display: none;">0</span>
+    </button>
+
+    <!-- Modal de Chat -->
+    <div id="chat-modal" class="chat-modal">
+        <div class="chat-header">
+            <div>
+                <h3><i data-lucide="users"></i> Chat da Empresa</h3>
+                <p class="chat-subtitle">Comunicação entre filiais</p>
+            </div>
+            <button id="chat-close" class="chat-close-btn">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div id="chat-messages" class="chat-messages">
+            <p style="text-align: center; color: #6c757d; padding: 20px;">Carregando mensagens...</p>
+        </div>
+        <div class="chat-input-container">
+            <input type="text" id="chat-input" placeholder="Digite sua mensagem..." maxlength="1000">
+            <button id="chat-send" class="chat-send-btn">
+                <i data-lucide="send"></i>
+            </button>
+        </div>
+    </div>
+
     <!-- Script JavaScript -->
     <script src="app.js"></script>
 </body>
