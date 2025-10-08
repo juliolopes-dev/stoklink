@@ -1002,7 +1002,26 @@ document.addEventListener('DOMContentLoaded', function() {
     async function carregarFiliaisChat() {
         try {
             // Pegar filial do usuário logado
-            const usuario = JSON.parse(localStorage.getItem('usuario'));
+            let usuario = JSON.parse(localStorage.getItem('usuario'));
+            
+            // Se não tem filial no localStorage, buscar do backend
+            if (usuario && !usuario.filial) {
+                console.log('⚠️ Usuário sem filial no localStorage, buscando do servidor...');
+                try {
+                    const response = await apiFetch('/api/auth/me');
+                    if (response.ok) {
+                        const userData = await response.json();
+                        if (userData.filial) {
+                            usuario.filial = userData.filial;
+                            localStorage.setItem('usuario', JSON.stringify(usuario));
+                            console.log('✅ Filial atualizada no localStorage:', userData.filial);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Erro ao buscar dados do usuário:', error);
+                }
+            }
+            
             if (usuario && usuario.filial) {
                 minhaFilial = usuario.filial;
                 console.log('👤 Minha filial:', minhaFilial);

@@ -76,6 +76,39 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// GET - Dados do usuário logado
+app.get('/api/auth/me', verificarToken, async (req, res) => {
+    try {
+        const [usuarios] = await db.query(`
+            SELECT u.id, u.nome, u.email, u.role, u.filial, 
+                   e.id as empresa_id, e.nome as empresa_nome
+            FROM usuarios u
+            INNER JOIN empresas e ON u.empresa_id = e.id
+            WHERE u.id = ?
+        `, [req.usuario.id]);
+
+        if (usuarios.length === 0) {
+            return res.status(404).json({ error: 'Usuário não encontrado' });
+        }
+
+        const usuario = usuarios[0];
+        res.json({
+            id: usuario.id,
+            nome: usuario.nome,
+            email: usuario.email,
+            role: usuario.role,
+            filial: usuario.filial,
+            empresa: {
+                id: usuario.empresa_id,
+                nome: usuario.empresa_nome
+            }
+        });
+    } catch (error) {
+        console.error('Erro ao buscar dados do usuário:', error);
+        res.status(500).json({ error: 'Erro ao buscar dados do usuário' });
+    }
+});
+
 // POST - Registro público (novo cliente)
 app.post('/api/auth/registrar-publico', async (req, res) => {
     const { nome, email, senha, empresa } = req.body;
