@@ -296,13 +296,13 @@ app.put('/api/transferencias/:id/status', verificarToken, async (req, res) => {
         let updateFields = 'status = ?';
         let updateValues = [status];
         
-        // Registrar timestamps automaticamente
+        // Registrar timestamps automaticamente (UTC-3 Brasília)
         if (status === 'em_separacao') {
-            updateFields += ', data_inicio_separacao = NOW()';
+            updateFields += ', data_inicio_separacao = CONVERT_TZ(NOW(), \'+00:00\', \'-03:00\')';
         } else if (status === 'aguardando_lancamento') {
-            updateFields += ', data_fim_separacao = NOW()';
+            updateFields += ', data_fim_separacao = CONVERT_TZ(NOW(), \'+00:00\', \'-03:00\')';
         } else if (status === 'recebido') {
-            updateFields += ', data_recebimento = NOW()';
+            updateFields += ', data_recebimento = CONVERT_TZ(NOW(), \'+00:00\', \'-03:00\')';
         }
         
         updateValues.push(req.params.id);
