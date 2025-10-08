@@ -1074,6 +1074,9 @@ document.addEventListener('DOMContentLoaded', function() {
     chatFilialSelect.addEventListener('change', () => {
         filialSelecionada = chatFilialSelect.value;
         
+        // Parar polling anterior
+        pararPolling();
+        
         if (filialSelecionada) {
             chatInput.disabled = false;
             chatSend.disabled = false;
@@ -1084,6 +1087,12 @@ document.addEventListener('DOMContentLoaded', function() {
             mensagens = [];
             ultimoIdMensagem = 0;
             carregarMensagens();
+            
+            // Iniciar polling para buscar mensagens novas
+            if (chatAberto) {
+                iniciarPolling();
+                console.log('🔄 Polling iniciado para', filialSelecionada);
+            }
         } else {
             chatInput.disabled = true;
             chatSend.disabled = true;
