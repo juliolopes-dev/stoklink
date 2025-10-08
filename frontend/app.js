@@ -374,11 +374,105 @@ document.addEventListener('DOMContentLoaded', function() {
         } else if (t.status === 'aguardando_lancamento') {
             acoesContainer.innerHTML = `<div class="form-group"><label for="input-transf-interna">Nº da Transferência (Sistema Principal) *</label><input type="text" id="input-transf-interna" placeholder="Digite o número da transferência"></div><button class="btn btn-primary" id="btn-lancar-transferencia"><i data-lucide="send"></i> Lançamento Concluído</button>`;
             acoesContainer.querySelector('#btn-lancar-transferencia').onclick = () => lancarTransferencia(t.id);
+        } else if (t.status === 'concluido') {
+            const btnReceber = document.createElement('button');
+            btnReceber.className = 'btn btn-success';
+            btnReceber.innerHTML = '<i data-lucide="check-circle"></i> Marcar como Recebido';
+            btnReceber.onclick = async () => {
+                const confirmado = await showConfirm(
+                    'Confirma o recebimento desta transferência no destino?',
+                    'Confirmar Recebimento',
+                    'info'
+                );
+                if (confirmado) {
+                    await mudarStatus(t.id, 'recebido');
+                    await showAlert('Transferência marcada como recebida!', 'Sucesso', 'success');
+                }
+            };
+            acoesContainer.appendChild(btnReceber);
         } else { 
-            acoesContainer.innerHTML = '<p>Esta transferência foi concluída.</p>'; 
+            acoesContainer.innerHTML = '<p>Esta transferência foi finalizada.</p>'; 
         }
+        
+        // Mostrar timestamps se existirem
+        const timelineCard = document.getElementById('detalhe-timeline-card');
+        let hasTimeline = false;
+        
+        if (t.data_inicio_separacao) {
+            hasTimeline = true;
+            document.getElementById('detalhe-inicio-separacao-wrapper').style.display = 'block';
+            document.getElementById('detalhe-inicio-separacao').textContent = formatarDataHora(t.data_inicio_separacao);
+        } else {
+            document.getElementById('detalhe-inicio-separacao-wrapper').style.display = 'none';
+        }
+        
+        if (t.data_fim_separacao) {
+            hasTimeline = true;
+            document.getElementById('detalhe-fim-separacao-wrapper').style.display = 'block';
+            document.getElementById('detalhe-fim-separacao').textContent = formatarDataHora(t.data_fim_separacao);
+            
+            // Calcular tempo de separação
+            if (t.data_inicio_separacao) {
+                const duracao = calcularDuracao(t.data_inicio_separacao, t.data_fim_separacao);
+                document.getElementById('detalhe-tempo-separacao-wrapper').style.display = 'block';
+                document.getElementById('detalhe-tempo-separacao').textContent = duracao;
+            }
+        } else {
+            document.getElementById('detalhe-fim-separacao-wrapper').style.display = 'none';
+            document.getElementById('detalhe-tempo-separacao-wrapper').style.display = 'none';
+        }
+        
+        if (t.data_recebimento) {
+            hasTimeline = true;
+            document.getElementById('detalhe-recebimento-wrapper').style.display = 'block';
+            document.getElementById('detalhe-recebimento').textContent = formatarDataHora(t.data_recebimento);
+            
+            // Calcular tempo total (do início da separação até recebimento)
+            if (t.data_inicio_separacao) {
+                const duracaoTotal = calcularDuracao(t.data_inicio_separacao, t.data_recebimento);
+                document.getElementById('detalhe-tempo-total-wrapper').style.display = 'block';
+                document.getElementById('detalhe-tempo-total').textContent = duracaoTotal;
+            }
+        } else {
+            document.getElementById('detalhe-recebimento-wrapper').style.display = 'none';
+            document.getElementById('detalhe-tempo-total-wrapper').style.display = 'none';
+        }
+        
+        timelineCard.style.display = hasTimeline ? 'block' : 'none';
+        
         showView('detalhe');
     }
+    // Funções auxiliares para timestamps
+    function formatarDataHora(dataString) {
+        if (!dataString) return '-';
+        const data = new Date(dataString);
+        return data.toLocaleString('pt-BR', { 
+            day: '2-digit', 
+            month: '2-digit', 
+            year: 'numeric', 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+    }
+    
+    function calcularDuracao(dataInicio, dataFim) {
+        if (!dataInicio || !dataFim) return '-';
+        const inicio = new Date(dataInicio);
+        const fim = new Date(dataFim);
+        const diffMs = fim - inicio;
+        
+        const horas = Math.floor(diffMs / (1000 * 60 * 60));
+        const minutos = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        
+        if (horas > 24) {
+            const dias = Math.floor(horas / 24);
+            const horasRestantes = horas % 24;
+            return `${dias}d ${horasRestantes}h ${minutos}min`;
+        }
+        
+        return `${horas}h ${minutos}min`;
+    }
+    
     const getStatusInfo = (status) => {
         switch(status) {
             case 'rascunho': return { text: 'Rascunho', className: 'status-rascunho' };
@@ -386,6 +480,7 @@ document.addEventListener('DOMContentLoaded', function() {
             case 'em_separacao': return { text: 'Em Separação', className: 'status-em-separacao' };
             case 'aguardando_lancamento': return { text: 'Aguardando Lançamento', className: 'status-aguardando-lancamento' };
             case 'concluido': return { text: 'Concluído', className: 'status-concluido' };
+            case 'recebido': return { text: 'Recebido', className: 'status-recebido' };
             default: return { text: 'Desconhecido', className: '' };
         }
     };

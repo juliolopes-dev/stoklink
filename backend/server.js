@@ -292,9 +292,24 @@ app.put('/api/transferencias/:id/status', verificarToken, async (req, res) => {
     const { status } = req.body;
     
     try {
+        // Montar query dinâmica baseada no status
+        let updateFields = 'status = ?';
+        let updateValues = [status];
+        
+        // Registrar timestamps automaticamente
+        if (status === 'em_separacao') {
+            updateFields += ', data_inicio_separacao = NOW()';
+        } else if (status === 'aguardando_lancamento') {
+            updateFields += ', data_fim_separacao = NOW()';
+        } else if (status === 'recebido') {
+            updateFields += ', data_recebimento = NOW()';
+        }
+        
+        updateValues.push(req.params.id);
+        
         await db.query(
-            'UPDATE transferencias SET status = ? WHERE id = ?',
-            [status, req.params.id]
+            `UPDATE transferencias SET ${updateFields} WHERE id = ?`,
+            updateValues
         );
         res.json({ message: 'Status atualizado com sucesso' });
     } catch (error) {

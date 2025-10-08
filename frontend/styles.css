@@ -274,6 +274,7 @@ p.subtitle {
 .status-em-separacao { background-color: #4caf50; color: rgb(255, 255, 255) !important;}
 .status-aguardando-lancamento { background-color: #f57c00; color: rgb(255, 255, 255) !important; }
 .status-concluido { background-color: #1976d2; color: rgb(255, 255, 255) !important;}
+.status-recebido { background-color: #9c27b0; color: rgb(255, 255, 255) !important;}
 
 /* Estilos para ícones */
 i[data-lucide] {
