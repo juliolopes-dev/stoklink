@@ -521,6 +521,33 @@ i[data-lucide] {
     opacity: 0.9;
 }
 
+.chat-select-container {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+}
+
+.chat-filial-select {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    outline: none;
+    min-width: 180px;
+}
+
+.chat-filial-select:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.chat-filial-select option {
+    background: #2a5298;
+    color: white;
+}
+
 .chat-close-btn {
     background: transparent;
     border: none;

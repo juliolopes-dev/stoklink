@@ -195,19 +195,24 @@
     <div id="chat-modal" class="chat-modal">
         <div class="chat-header">
             <div>
-                <h3><i data-lucide="users"></i> Chat da Empresa</h3>
-                <p class="chat-subtitle">Comunicação entre filiais</p>
+                <h3><i data-lucide="message-circle"></i> Chat entre Filiais</h3>
+                <div class="chat-select-container">
+                    <label for="chat-filial-select" style="font-size: 12px; margin-right: 8px;">Conversar com:</label>
+                    <select id="chat-filial-select" class="chat-filial-select">
+                        <option value="">Selecione uma filial...</option>
+                    </select>
+                </div>
             </div>
             <button id="chat-close" class="chat-close-btn">
                 <i data-lucide="x"></i>
             </button>
         </div>
         <div id="chat-messages" class="chat-messages">
-            <p style="text-align: center; color: #6c757d; padding: 20px;">Carregando mensagens...</p>
+            <p style="text-align: center; color: #6c757d; padding: 20px;">Selecione uma filial para conversar</p>
         </div>
         <div class="chat-input-container">
-            <input type="text" id="chat-input" placeholder="Digite sua mensagem..." maxlength="1000">
-            <button id="chat-send" class="chat-send-btn">
+            <input type="text" id="chat-input" placeholder="Selecione uma filial primeiro..." maxlength="1000" disabled>
+            <button id="chat-send" class="chat-send-btn" disabled>
                 <i data-lucide="send"></i>
             </button>
         </div>

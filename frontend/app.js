@@ -989,11 +989,59 @@ document.addEventListener('DOMContentLoaded', function() {
     const chatInput = document.getElementById('chat-input');
     const chatSend = document.getElementById('chat-send');
     const chatBadge = document.getElementById('chat-badge');
+    const chatFilialSelect = document.getElementById('chat-filial-select');
     
     let mensagens = [];
     let chatAberto = false;
     let ultimoIdMensagem = 0;
     let pollingInterval = null;
+    let filialSelecionada = '';
+    let minhaFilial = '';
+    
+    // Carregar filiais no select do chat
+    async function carregarFiliaisChat() {
+        try {
+            const response = await apiFetch('/api/filiais');
+            if (response.ok) {
+                const filiais = await response.json();
+                
+                chatFilialSelect.innerHTML = '<option value="">Selecione uma filial...</option>';
+                filiais.forEach(f => {
+                    const option = document.createElement('option');
+                    option.value = f.nome;
+                    option.textContent = f.nome;
+                    chatFilialSelect.appendChild(option);
+                });
+                
+                // Pegar filial do usuário (baseado na primeira transferência ou definir default)
+                minhaFilial = filiais.length > 0 ? filiais[0].nome : 'CD';
+            }
+        } catch (error) {
+            console.error('Erro ao carregar filiais:', error);
+        }
+    }
+    
+    // Quando selecionar uma filial
+    chatFilialSelect.addEventListener('change', () => {
+        filialSelecionada = chatFilialSelect.value;
+        
+        if (filialSelecionada) {
+            chatInput.disabled = false;
+            chatSend.disabled = false;
+            chatInput.placeholder = 'Digite sua mensagem...';
+            chatInput.focus();
+            
+            // Limpar mensagens e recarregar
+            mensagens = [];
+            ultimoIdMensagem = 0;
+            carregarMensagens();
+        } else {
+            chatInput.disabled = true;
+            chatSend.disabled = true;
+            chatInput.placeholder = 'Selecione uma filial primeiro...';
+            chatMessages.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">Selecione uma filial para conversar</p>';
+        }
+    });
     
     // Abrir/fechar chat
     chatToggle.addEventListener('click', () => {
@@ -1001,11 +1049,13 @@ document.addEventListener('DOMContentLoaded', function() {
         chatModal.classList.toggle('active');
         
         if (chatAberto) {
-            carregarMensagens();
-            iniciarPolling();
+            carregarFiliaisChat();
+            if (filialSelecionada) {
+                carregarMensagens();
+                iniciarPolling();
+            }
             chatBadge.style.display = 'none';
             chatBadge.textContent = '0';
-            chatInput.focus();
         } else {
             pararPolling();
         }
@@ -1021,10 +1071,17 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Carregar mensagens
     async function carregarMensagens(apenasNovas = false) {
+        if (!filialSelecionada || !minhaFilial) {
+            console.log('Filial não selecionada');
+            return;
+        }
+        
         try {
-            const url = apenasNovas && ultimoIdMensagem > 0 
-                ? `/api/mensagens?ultimoId=${ultimoIdMensagem}` 
-                : '/api/mensagens';
+            let url = `/api/mensagens?minhaFilial=${encodeURIComponent(minhaFilial)}&outraFilial=${encodeURIComponent(filialSelecionada)}`;
+            
+            if (apenasNovas && ultimoIdMensagem > 0) {
+                url += `&ultimoId=${ultimoIdMensagem}`;
+            }
             
             console.log('📥 Carregando mensagens:', url);
                 
@@ -1103,12 +1160,16 @@ document.addEventListener('DOMContentLoaded', function() {
     async function enviarMensagem() {
         const mensagem = chatInput.value.trim();
         
-        if (!mensagem) return;
+        if (!mensagem || !filialSelecionada || !minhaFilial) return;
         
         try {
             const response = await apiFetch('/api/mensagens', {
                 method: 'POST',
-                body: JSON.stringify({ mensagem })
+                body: JSON.stringify({ 
+                    mensagem,
+                    filialOrigem: minhaFilial,
+                    filialDestino: filialSelecionada
+                })
             });
             
             if (response.ok) {

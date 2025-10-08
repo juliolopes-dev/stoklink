@@ -823,24 +823,36 @@ app.get('/api/health', (req, res) => {
 // ROTAS DE CHAT
 // ========================================
 
-// GET - Buscar mensagens do chat da empresa
+// GET - Buscar mensagens do chat entre duas filiais
 app.get('/api/mensagens', verificarToken, async (req, res) => {
     try {
         const empresa_id = req.usuario.empresa_id;
+        const minhaFilial = req.query.minhaFilial;
+        const outraFilial = req.query.outraFilial;
         const limite = parseInt(req.query.limite) || 50;
         const ultimoId = parseInt(req.query.ultimoId) || 0;
         
-        console.log('📥 Buscando mensagens:', { empresa_id, limite, ultimoId });
+        console.log('📥 Buscando mensagens:', { empresa_id, minhaFilial, outraFilial, limite, ultimoId });
         
+        if (!minhaFilial || !outraFilial) {
+            return res.status(400).json({ error: 'minhaFilial e outraFilial são obrigatórios' });
+        }
+        
+        // Buscar mensagens entre as duas filiais (nos dois sentidos)
         let query = `
-            SELECT m.id, m.mensagem, m.created_at,
+            SELECT m.id, m.mensagem, m.created_at, m.filial_origem, m.filial_destino,
                    u.nome as usuario_nome, u.id as usuario_id
             FROM mensagens m
             INNER JOIN usuarios u ON m.usuario_id = u.id
             WHERE m.empresa_id = ?
+              AND (
+                  (m.filial_origem = ? AND m.filial_destino = ?)
+                  OR 
+                  (m.filial_origem = ? AND m.filial_destino = ?)
+              )
         `;
         
-        const params = [empresa_id];
+        const params = [empresa_id, minhaFilial, outraFilial, outraFilial, minhaFilial];
         
         // Se tem ultimoId, buscar apenas mensagens novas
         if (ultimoId > 0) {
@@ -851,28 +863,14 @@ app.get('/api/mensagens', verificarToken, async (req, res) => {
         query += ' ORDER BY m.created_at DESC LIMIT ?';
         params.push(limite);
         
-        console.log('🔍 Query:', query);
-        console.log('🔍 Params:', params);
-        
-        // Debug: ver todas as mensagens sem filtro
-        const [todasMensagens] = await db.query('SELECT * FROM mensagens LIMIT 5');
-        console.log('🔍 Mensagens no banco (sample):', todasMensagens);
-        
         const [mensagens] = await db.query(query, params);
         
         console.log(`✅ ${mensagens.length} mensagens encontradas`);
-        
-        if (mensagens.length === 0) {
-            // Debug: verificar se existe alguma mensagem para esta empresa
-            const [countResult] = await db.query('SELECT COUNT(*) as total FROM mensagens WHERE empresa_id = ?', [empresa_id]);
-            console.log(`🔍 Total de mensagens para empresa_id ${empresa_id}:`, countResult[0].total);
-        }
         
         // Inverter ordem para exibir do mais antigo para o mais novo
         res.json(mensagens.reverse());
     } catch (error) {
         console.error('❌ Erro ao buscar mensagens:', error);
-        console.error('Stack:', error.stack);
         res.status(500).json({ error: 'Erro ao buscar mensagens', detalhes: error.message });
     }
 });
@@ -880,14 +878,18 @@ app.get('/api/mensagens', verificarToken, async (req, res) => {
 // POST - Enviar mensagem no chat
 app.post('/api/mensagens', verificarToken, async (req, res) => {
     try {
-        const { mensagem } = req.body;
+        const { mensagem, filialOrigem, filialDestino } = req.body;
         const empresa_id = req.usuario.empresa_id;
         const usuario_id = req.usuario.id;
         
-        console.log('📨 Nova mensagem:', { empresa_id, usuario_id, mensagem: mensagem?.substring(0, 50) });
+        console.log('📨 Nova mensagem:', { empresa_id, usuario_id, filialOrigem, filialDestino, mensagem: mensagem?.substring(0, 50) });
         
         if (!mensagem || mensagem.trim().length === 0) {
             return res.status(400).json({ error: 'Mensagem não pode ser vazia' });
+        }
+        
+        if (!filialOrigem || !filialDestino) {
+            return res.status(400).json({ error: 'Filial de origem e destino são obrigatórios' });
         }
         
         if (mensagem.length > 1000) {
@@ -895,15 +897,15 @@ app.post('/api/mensagens', verificarToken, async (req, res) => {
         }
         
         const [result] = await db.query(
-            'INSERT INTO mensagens (empresa_id, usuario_id, mensagem) VALUES (?, ?, ?)',
-            [empresa_id, usuario_id, mensagem.trim()]
+            'INSERT INTO mensagens (empresa_id, usuario_id, mensagem, filial_origem, filial_destino) VALUES (?, ?, ?, ?, ?)',
+            [empresa_id, usuario_id, mensagem.trim(), filialOrigem, filialDestino]
         );
         
         console.log('✅ Mensagem inserida, ID:', result.insertId);
         
         // Buscar a mensagem recém-criada com dados do usuário
         const [mensagens] = await db.query(`
-            SELECT m.id, m.mensagem, m.created_at,
+            SELECT m.id, m.mensagem, m.created_at, m.filial_origem, m.filial_destino,
                    u.nome as usuario_nome, u.id as usuario_id
             FROM mensagens m
             INNER JOIN usuarios u ON m.usuario_id = u.id
