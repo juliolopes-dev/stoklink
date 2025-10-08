@@ -854,9 +854,19 @@ app.get('/api/mensagens', verificarToken, async (req, res) => {
         console.log('🔍 Query:', query);
         console.log('🔍 Params:', params);
         
+        // Debug: ver todas as mensagens sem filtro
+        const [todasMensagens] = await db.query('SELECT * FROM mensagens LIMIT 5');
+        console.log('🔍 Mensagens no banco (sample):', todasMensagens);
+        
         const [mensagens] = await db.query(query, params);
         
         console.log(`✅ ${mensagens.length} mensagens encontradas`);
+        
+        if (mensagens.length === 0) {
+            // Debug: verificar se existe alguma mensagem para esta empresa
+            const [countResult] = await db.query('SELECT COUNT(*) as total FROM mensagens WHERE empresa_id = ?', [empresa_id]);
+            console.log(`🔍 Total de mensagens para empresa_id ${empresa_id}:`, countResult[0].total);
+        }
         
         // Inverter ordem para exibir do mais antigo para o mais novo
         res.json(mensagens.reverse());
