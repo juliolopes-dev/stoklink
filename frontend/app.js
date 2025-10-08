@@ -1001,20 +1001,31 @@ document.addEventListener('DOMContentLoaded', function() {
     // Carregar filiais no select do chat
     async function carregarFiliaisChat() {
         try {
+            // Pegar filial do usuário logado
+            const usuario = JSON.parse(localStorage.getItem('usuario'));
+            if (usuario && usuario.filial) {
+                minhaFilial = usuario.filial;
+                console.log('👤 Minha filial:', minhaFilial);
+            } else {
+                console.error('❌ Usuário não tem filial definida!');
+                chatMessages.innerHTML = '<p style="text-align: center; color: #dc3545; padding: 20px;">Erro: Seu usuário não tem filial definida. Entre em contato com o administrador.</p>';
+                return;
+            }
+            
             const response = await apiFetch('/api/filiais');
             if (response.ok) {
                 const filiais = await response.json();
                 
                 chatFilialSelect.innerHTML = '<option value="">Selecione uma filial...</option>';
                 filiais.forEach(f => {
-                    const option = document.createElement('option');
-                    option.value = f.nome;
-                    option.textContent = f.nome;
-                    chatFilialSelect.appendChild(option);
+                    // Não mostrar a própria filial na lista
+                    if (f.nome !== minhaFilial) {
+                        const option = document.createElement('option');
+                        option.value = f.nome;
+                        option.textContent = f.nome;
+                        chatFilialSelect.appendChild(option);
+                    }
                 });
-                
-                // Pegar filial do usuário (baseado na primeira transferência ou definir default)
-                minhaFilial = filiais.length > 0 ? filiais[0].nome : 'CD';
             }
         } catch (error) {
             console.error('Erro ao carregar filiais:', error);

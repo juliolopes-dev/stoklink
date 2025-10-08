@@ -27,7 +27,7 @@ app.post('/api/auth/login', async (req, res) => {
     
     try {
         const [usuarios] = await db.query(`
-            SELECT u.*, e.nome as empresa_nome 
+            SELECT u.*, e.nome as empresa_nome, u.filial 
             FROM usuarios u
             INNER JOIN empresas e ON u.empresa_id = e.id
             WHERE u.email = ? AND u.ativo = TRUE AND e.ativo = TRUE
@@ -52,7 +52,8 @@ app.post('/api/auth/login', async (req, res) => {
             empresa_id: usuario.empresa_id,
             email: usuario.email,
             nome: usuario.nome,
-            role: usuario.role
+            role: usuario.role,
+            filial: usuario.filial
         }, process.env.JWT_SECRET, { expiresIn: '8h' });
 
         res.json({
@@ -62,6 +63,7 @@ app.post('/api/auth/login', async (req, res) => {
                 nome: usuario.nome,
                 email: usuario.email,
                 role: usuario.role,
+                filial: usuario.filial,
                 empresa: {
                     id: usuario.empresa_id,
                     nome: usuario.empresa_nome
