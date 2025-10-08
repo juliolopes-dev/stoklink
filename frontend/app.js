@@ -1004,29 +1004,48 @@ document.addEventListener('DOMContentLoaded', function() {
             // Pegar filial do usuário logado
             let usuario = JSON.parse(localStorage.getItem('usuario'));
             
+            console.log('═══════════════════════════════════════════');
+            console.log('🔍 DEBUG CHAT - INFORMAÇÕES DO USUÁRIO');
+            console.log('═══════════════════════════════════════════');
+            console.log('📦 Usuário completo do localStorage:', usuario);
+            console.log('📍 Filial no localStorage:', usuario?.filial);
+            console.log('🔑 Token existe:', !!localStorage.getItem('token'));
+            console.log('═══════════════════════════════════════════');
+            
             // Se não tem filial no localStorage, buscar do backend
             if (usuario && !usuario.filial) {
                 console.log('⚠️ Usuário sem filial no localStorage, buscando do servidor...');
                 try {
                     const response = await apiFetch('/api/auth/me');
+                    console.log('🔙 Resposta do servidor (status):', response.status);
+                    
                     if (response.ok) {
                         const userData = await response.json();
+                        console.log('🔙 Dados retornados do servidor:', userData);
+                        console.log('📍 Filial do servidor:', userData.filial);
+                        
                         if (userData.filial) {
                             usuario.filial = userData.filial;
                             localStorage.setItem('usuario', JSON.stringify(usuario));
                             console.log('✅ Filial atualizada no localStorage:', userData.filial);
+                        } else {
+                            console.error('⚠️ Servidor retornou dados mas sem filial!');
                         }
+                    } else {
+                        const errorData = await response.json();
+                        console.error('❌ Erro do servidor:', errorData);
                     }
                 } catch (error) {
-                    console.error('Erro ao buscar dados do usuário:', error);
+                    console.error('❌ Erro ao buscar dados do usuário:', error);
                 }
             }
             
             if (usuario && usuario.filial) {
                 minhaFilial = usuario.filial;
-                console.log('👤 Minha filial:', minhaFilial);
+                console.log('✅ Minha filial definida:', minhaFilial);
             } else {
                 console.error('❌ Usuário não tem filial definida!');
+                console.error('💡 Solução: Verifique se a coluna "filial" no banco tem valor para seu usuário');
                 chatMessages.innerHTML = '<p style="text-align: center; color: #dc3545; padding: 20px;">Erro: Seu usuário não tem filial definida. Entre em contato com o administrador.</p>';
                 return;
             }
