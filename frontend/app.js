@@ -279,11 +279,18 @@ document.addEventListener('DOMContentLoaded', function() {
             card.className = 'card transfer-card';
             card.dataset.id = t.id;
             const statusInfo = getStatusInfo(t.status);
+            
+            // Adicionar número interno se existir
+            const numeroInterno = t.numeroTransferenciaInterna 
+                ? `<div><strong>Nº Interno:</strong><span> ${t.numeroTransferenciaInterna}</span></div>` 
+                : '';
+            
             card.innerHTML = `
                 <strong>${t.id}</strong>
                 <div><strong>Origem:</strong><span> ${t.origem}</span></div>
                 <div><strong>Destino:</strong><span> ${t.destino}</span></div>
                 <div><strong>Solicitante:</strong><span> ${t.solicitante}</span></div>
+                ${numeroInterno}
                 <div class="tags-container">${renderTags(t.tags)}</div>
                 <span class="status-tag ${statusInfo.className}">${statusInfo.text}</span>`;
             card.addEventListener('click', () => {
@@ -891,11 +898,18 @@ document.addEventListener('DOMContentLoaded', function() {
             card.className = 'card transfer-card';
             card.dataset.id = t.id;
             const statusInfo = getStatusInfo(t.status);
+            
+            // Adicionar número interno se existir
+            const numeroInterno = t.numeroTransferenciaInterna 
+                ? `<div><strong>Nº Interno:</strong><span> ${t.numeroTransferenciaInterna}</span></div>` 
+                : '';
+            
             card.innerHTML = `
                 <strong>${t.id}</strong>
                 <div><strong>Origem:</strong><span> ${t.origem}</span></div>
                 <div><strong>Destino:</strong><span> ${t.destino}</span></div>
                 <div><strong>Solicitante:</strong><span> ${t.solicitante}</span></div>
+                ${numeroInterno}
                 <div class="tags-container">${renderTags(t.tags)}</div>
                 <span class="status-tag ${statusInfo.className}">${statusInfo.text}</span>`;
             card.addEventListener('click', () => {
