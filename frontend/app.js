@@ -1250,7 +1250,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     ${reacoesHTML}
                     <button class="chat-message-react-btn" data-msg-id="${msg.id}">😊</button>
                     <div class="chat-reaction-picker" id="picker-${msg.id}">
-                        ${['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => 
+                        ${['✔️', '❌', '👍', '🚨', '❤️', '😂', '😮', '🙏'].map(emoji => 
                             `<div class="chat-reaction-picker-emoji" data-msg-id="${msg.id}" data-emoji="${emoji}">${emoji}</div>`
                         ).join('')}
                     </div>
