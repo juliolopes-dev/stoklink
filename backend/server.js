@@ -899,7 +899,7 @@ app.get('/api/mensagens', verificarToken, async (req, res) => {
         
         // Buscar mensagens entre as duas filiais (nos dois sentidos)
         let query = `
-            SELECT m.id, m.mensagem, m.created_at, m.filial_origem, m.filial_destino,
+            SELECT m.id, m.mensagem, m.created_at, m.filial_origem, m.filial_destino, m.reacoes,
                    u.nome as usuario_nome, u.id as usuario_id
             FROM mensagens m
             INNER JOIN usuarios u ON m.usuario_id = u.id
@@ -964,7 +964,7 @@ app.post('/api/mensagens', verificarToken, async (req, res) => {
         
         // Buscar a mensagem recém-criada com dados do usuário
         const [mensagens] = await db.query(`
-            SELECT m.id, m.mensagem, m.created_at, m.filial_origem, m.filial_destino,
+            SELECT m.id, m.mensagem, m.created_at, m.filial_origem, m.filial_destino, m.reacoes,
                    u.nome as usuario_nome, u.id as usuario_id
             FROM mensagens m
             INNER JOIN usuarios u ON m.usuario_id = u.id
@@ -976,6 +976,63 @@ app.post('/api/mensagens', verificarToken, async (req, res) => {
         console.error('❌ Erro ao enviar mensagem:', error);
         console.error('Stack:', error.stack);
         res.status(500).json({ error: 'Erro ao enviar mensagem', detalhes: error.message });
+    }
+});
+
+// POST - Adicionar/Remover reação em mensagem
+app.post('/api/mensagens/:id/reacao', verificarToken, async (req, res) => {
+    try {
+        const mensagemId = parseInt(req.params.id);
+        const { emoji } = req.body;
+        const usuarioId = req.usuario.id;
+        
+        if (!emoji) {
+            return res.status(400).json({ error: 'Emoji é obrigatório' });
+        }
+        
+        // Buscar mensagem atual
+        const [mensagens] = await db.query('SELECT reacoes FROM mensagens WHERE id = ?', [mensagemId]);
+        
+        if (mensagens.length === 0) {
+            return res.status(404).json({ error: 'Mensagem não encontrada' });
+        }
+        
+        // Parse das reações existentes
+        let reacoes = mensagens[0].reacoes || {};
+        if (typeof reacoes === 'string') {
+            reacoes = JSON.parse(reacoes);
+        }
+        
+        // Se o emoji não existe, criar array
+        if (!reacoes[emoji]) {
+            reacoes[emoji] = [];
+        }
+        
+        // Verificar se o usuário já reagiu com esse emoji
+        const indexUsuario = reacoes[emoji].indexOf(usuarioId);
+        
+        if (indexUsuario > -1) {
+            // Remover reação
+            reacoes[emoji].splice(indexUsuario, 1);
+            // Se não tem mais ninguém com esse emoji, remover o emoji
+            if (reacoes[emoji].length === 0) {
+                delete reacoes[emoji];
+            }
+        } else {
+            // Adicionar reação
+            reacoes[emoji].push(usuarioId);
+        }
+        
+        // Atualizar no banco
+        await db.query(
+            'UPDATE mensagens SET reacoes = ? WHERE id = ?',
+            [JSON.stringify(reacoes), mensagemId]
+        );
+        
+        res.json({ success: true, reacoes });
+    } catch (error) {
+        console.error('❌ Erro ao reagir à mensagem:', error);
+        res.status(500).json({ error: 'Erro ao processar reação' });
     }
 });
 

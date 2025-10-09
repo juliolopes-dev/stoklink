@@ -1183,7 +1183,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Renderizar mensagens
-    function renderizarMensagens() {
+    function renderizarMensagens(termoBusca = '') {
         if (mensagens.length === 0) {
             chatMessages.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">Nenhuma mensagem ainda. Seja o primeiro a conversar!</p>';
             return;
@@ -1196,22 +1196,129 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         const usuarioId = usuario.id;
         
-        chatMessages.innerHTML = mensagens.map(msg => {
+        // Filtrar mensagens pela busca
+        let mensagensFiltradas = mensagens;
+        if (termoBusca) {
+            mensagensFiltradas = mensagens.filter(msg => 
+                msg.mensagem.toLowerCase().includes(termoBusca.toLowerCase())
+            );
+            
+            if (mensagensFiltradas.length === 0) {
+                chatMessages.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">Nenhuma mensagem encontrada para "' + termoBusca + '"</p>';
+                return;
+            }
+        }
+        
+        chatMessages.innerHTML = mensagensFiltradas.map((msg, index) => {
             const isOwn = msg.usuario_id === usuarioId;
             const data = new Date(msg.created_at);
             const hora = data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
             
+            // Highlight do termo de busca
+            let mensagemTexto = msg.mensagem;
+            if (termoBusca) {
+                const regex = new RegExp(`(${termoBusca})`, 'gi');
+                mensagemTexto = mensagemTexto.replace(regex, '<mark>$1</mark>');
+            }
+            
+            // Renderizar reações
+            let reacoesHTML = '';
+            if (msg.reacoes) {
+                const reacoes = typeof msg.reacoes === 'string' ? JSON.parse(msg.reacoes) : msg.reacoes;
+                const reacoesArray = Object.entries(reacoes);
+                
+                if (reacoesArray.length > 0) {
+                    reacoesHTML = '<div class="chat-message-reactions">';
+                    reacoesArray.forEach(([emoji, usuarios]) => {
+                        const reagiu = usuarios.includes(usuarioId);
+                        reacoesHTML += `
+                            <div class="chat-reaction ${reagiu ? 'reacted' : ''}" data-msg-id="${msg.id}" data-emoji="${emoji}">
+                                <span class="chat-reaction-emoji">${emoji}</span>
+                                <span class="chat-reaction-count">${usuarios.length}</span>
+                            </div>
+                        `;
+                    });
+                    reacoesHTML += '</div>';
+                }
+            }
+            
             return `
-                <div class="chat-message ${isOwn ? 'own' : 'other'}">
+                <div class="chat-message ${isOwn ? 'own' : 'other'}" data-msg-id="${msg.id}">
                     ${!isOwn ? `<div class="chat-message-header">${msg.usuario_nome}</div>` : ''}
-                    <div class="chat-message-content">${msg.mensagem}</div>
+                    <div class="chat-message-content">${mensagemTexto}</div>
                     <div class="chat-message-time">${hora}</div>
+                    ${reacoesHTML}
+                    <button class="chat-message-react-btn" data-msg-id="${msg.id}">😊</button>
+                    <div class="chat-reaction-picker" id="picker-${msg.id}">
+                        ${['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => 
+                            `<div class="chat-reaction-picker-emoji" data-msg-id="${msg.id}" data-emoji="${emoji}">${emoji}</div>`
+                        ).join('')}
+                    </div>
                 </div>
             `;
         }).join('');
         
+        // Adicionar event listeners para reações
+        document.querySelectorAll('.chat-message-react-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const msgId = btn.dataset.msgId;
+                const picker = document.getElementById(`picker-${msgId}`);
+                
+                // Fechar outros pickers
+                document.querySelectorAll('.chat-reaction-picker').forEach(p => {
+                    if (p.id !== `picker-${msgId}`) p.classList.remove('active');
+                });
+                
+                picker.classList.toggle('active');
+            });
+        });
+        
+        document.querySelectorAll('.chat-reaction-picker-emoji').forEach(emoji => {
+            emoji.addEventListener('click', (e) => {
+                e.stopPropagation();
+                reagirMensagem(emoji.dataset.msgId, emoji.dataset.emoji);
+                document.getElementById(`picker-${emoji.dataset.msgId}`).classList.remove('active');
+            });
+        });
+        
+        document.querySelectorAll('.chat-reaction').forEach(reaction => {
+            reaction.addEventListener('click', (e) => {
+                e.stopPropagation();
+                reagirMensagem(reaction.dataset.msgId, reaction.dataset.emoji);
+            });
+        });
+        
+        // Fechar picker ao clicar fora
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.chat-reaction-picker').forEach(p => p.classList.remove('active'));
+        });
+        
         // Scroll para o final
         chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    // Reagir a uma mensagem
+    async function reagirMensagem(mensagemId, emoji) {
+        try {
+            const response = await apiFetch(`/api/mensagens/${mensagemId}/reacao`, {
+                method: 'POST',
+                body: JSON.stringify({ emoji })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                
+                // Atualizar mensagem local
+                const msgIndex = mensagens.findIndex(m => m.id == mensagemId);
+                if (msgIndex > -1) {
+                    mensagens[msgIndex].reacoes = data.reacoes;
+                    renderizarMensagens(document.getElementById('chat-search').value);
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao reagir:', error);
+        }
     }
     
     // Enviar mensagem
@@ -1275,6 +1382,31 @@ document.addEventListener('DOMContentLoaded', function() {
             carregarMensagens(true);
         }
     }, 10000);
+    
+    // ========================================
+    // BUSCA DE MENSAGENS
+    // ========================================
+    
+    const chatSearch = document.getElementById('chat-search');
+    const chatSearchClear = document.getElementById('chat-search-clear');
+    
+    chatSearch.addEventListener('input', (e) => {
+        const termo = e.target.value;
+        
+        if (termo) {
+            chatSearchClear.style.display = 'flex';
+        } else {
+            chatSearchClear.style.display = 'none';
+        }
+        
+        renderizarMensagens(termo);
+    });
+    
+    chatSearchClear.addEventListener('click', () => {
+        chatSearch.value = '';
+        chatSearchClear.style.display = 'none';
+        renderizarMensagens('');
+    });
 
     // --- Inicialização ---
     adicionarItem();
