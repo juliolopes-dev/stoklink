@@ -997,6 +997,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let pollingInterval = null;
     let filialSelecionada = '';
     let minhaFilial = '';
+    let replyToMessage = null; // Mensagem sendo respondida
     
     // Carregar filiais no select do chat
     async function carregarFiliaisChat() {
@@ -1221,6 +1222,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 mensagemTexto = mensagemTexto.replace(regex, '<mark>$1</mark>');
             }
             
+            // Renderizar mensagem respondida
+            let repliedHTML = '';
+            if (msg.reply_to_id && msg.reply_mensagem) {
+                repliedHTML = `
+                    <div class="chat-message-replied" data-scroll-to="${msg.reply_to_id}">
+                        <div class="chat-message-replied-header">${msg.reply_usuario_nome}</div>
+                        <div class="chat-message-replied-text">${msg.reply_mensagem}</div>
+                    </div>
+                `;
+            }
+            
             // Renderizar reações
             let reacoesHTML = '';
             if (msg.reacoes) {
@@ -1245,9 +1257,13 @@ document.addEventListener('DOMContentLoaded', function() {
             return `
                 <div class="chat-message ${isOwn ? 'own' : 'other'}" data-msg-id="${msg.id}">
                     ${!isOwn ? `<div class="chat-message-header">${msg.usuario_nome}</div>` : ''}
+                    ${repliedHTML}
                     <div class="chat-message-content">${mensagemTexto}</div>
                     <div class="chat-message-time">${hora}</div>
                     ${reacoesHTML}
+                    <button class="chat-message-reply-btn" data-msg-id="${msg.id}">
+                        <i data-lucide="corner-up-left"></i>
+                    </button>
                     <button class="chat-message-react-btn" data-msg-id="${msg.id}">😊</button>
                     <div class="chat-reaction-picker" id="picker-${msg.id}">
                         ${['✔️', '❌', '👍', '🚨', '❤️', '😂', '😮', '🙏'].map(emoji => 
@@ -1257,6 +1273,35 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
             `;
         }).join('');
+        
+        // Adicionar event listeners para reply
+        document.querySelectorAll('.chat-message-reply-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const msgId = parseInt(btn.dataset.msgId);
+                const msg = mensagens.find(m => m.id === msgId);
+                
+                if (msg) {
+                    mostrarReplyPreview(msg);
+                }
+            });
+        });
+        
+        // Adicionar event listeners para clicar em mensagem respondida (scroll)
+        document.querySelectorAll('.chat-message-replied').forEach(replied => {
+            replied.addEventListener('click', () => {
+                const targetId = replied.dataset.scrollTo;
+                const targetElement = document.querySelector(`[data-msg-id="${targetId}"]`);
+                
+                if (targetElement) {
+                    targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    targetElement.style.background = '#fff3cd';
+                    setTimeout(() => {
+                        targetElement.style.background = '';
+                    }, 1500);
+                }
+            });
+        });
         
         // Adicionar event listeners para reações
         document.querySelectorAll('.chat-message-react-btn').forEach(btn => {
@@ -1321,6 +1366,27 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
+    // Mostrar preview da mensagem sendo respondida
+    function mostrarReplyPreview(msg) {
+        replyToMessage = msg;
+        
+        const replyPreview = document.getElementById('chat-reply-preview');
+        const replyPreviewUser = document.getElementById('chat-reply-preview-user');
+        const replyPreviewText = document.getElementById('chat-reply-preview-text');
+        
+        replyPreviewUser.textContent = msg.usuario_nome;
+        replyPreviewText.textContent = msg.mensagem;
+        replyPreview.style.display = 'flex';
+        
+        chatInput.focus();
+    }
+    
+    // Esconder preview de resposta
+    function esconderReplyPreview() {
+        replyToMessage = null;
+        document.getElementById('chat-reply-preview').style.display = 'none';
+    }
+    
     // Enviar mensagem
     async function enviarMensagem() {
         const mensagem = chatInput.value.trim();
@@ -1328,13 +1394,20 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!mensagem || !filialSelecionada || !minhaFilial) return;
         
         try {
+            const payload = { 
+                mensagem,
+                filialOrigem: minhaFilial,
+                filialDestino: filialSelecionada
+            };
+            
+            // Adicionar reply_to_id se estiver respondendo
+            if (replyToMessage) {
+                payload.replyToId = replyToMessage.id;
+            }
+            
             const response = await apiFetch('/api/mensagens', {
                 method: 'POST',
-                body: JSON.stringify({ 
-                    mensagem,
-                    filialOrigem: minhaFilial,
-                    filialDestino: filialSelecionada
-                })
+                body: JSON.stringify(payload)
             });
             
             if (response.ok) {
@@ -1343,6 +1416,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 ultimoIdMensagem = novaMensagem.id;
                 renderizarMensagens();
                 chatInput.value = '';
+                esconderReplyPreview(); // Esconder preview após enviar
             } else {
                 const errorData = await response.json();
                 console.error('Erro do servidor:', errorData);
@@ -1406,6 +1480,16 @@ document.addEventListener('DOMContentLoaded', function() {
         chatSearch.value = '';
         chatSearchClear.style.display = 'none';
         renderizarMensagens('');
+    });
+    
+    // ========================================
+    // REPLY PREVIEW
+    // ========================================
+    
+    const chatReplyPreviewClose = document.getElementById('chat-reply-preview-close');
+    
+    chatReplyPreviewClose.addEventListener('click', () => {
+        esconderReplyPreview();
     });
 
     // --- Inicialização ---

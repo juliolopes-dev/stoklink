@@ -899,10 +899,13 @@ app.get('/api/mensagens', verificarToken, async (req, res) => {
         
         // Buscar mensagens entre as duas filiais (nos dois sentidos)
         let query = `
-            SELECT m.id, m.mensagem, m.created_at, m.filial_origem, m.filial_destino, m.reacoes,
-                   u.nome as usuario_nome, u.id as usuario_id
+            SELECT m.id, m.mensagem, m.created_at, m.filial_origem, m.filial_destino, m.reacoes, m.reply_to_id,
+                   u.nome as usuario_nome, u.id as usuario_id,
+                   rm.mensagem as reply_mensagem, ru.nome as reply_usuario_nome
             FROM mensagens m
             INNER JOIN usuarios u ON m.usuario_id = u.id
+            LEFT JOIN mensagens rm ON m.reply_to_id = rm.id
+            LEFT JOIN usuarios ru ON rm.usuario_id = ru.id
             WHERE m.empresa_id = ?
               AND (
                   (m.filial_origem = ? AND m.filial_destino = ?)
@@ -937,11 +940,11 @@ app.get('/api/mensagens', verificarToken, async (req, res) => {
 // POST - Enviar mensagem no chat
 app.post('/api/mensagens', verificarToken, async (req, res) => {
     try {
-        const { mensagem, filialOrigem, filialDestino } = req.body;
+        const { mensagem, filialOrigem, filialDestino, replyToId } = req.body;
         const empresa_id = req.usuario.empresa_id;
         const usuario_id = req.usuario.id;
         
-        console.log('📨 Nova mensagem:', { empresa_id, usuario_id, filialOrigem, filialDestino, mensagem: mensagem?.substring(0, 50) });
+        console.log('📨 Nova mensagem:', { empresa_id, usuario_id, filialOrigem, filialDestino, replyToId, mensagem: mensagem?.substring(0, 50) });
         
         if (!mensagem || mensagem.trim().length === 0) {
             return res.status(400).json({ error: 'Mensagem não pode ser vazia' });
@@ -956,18 +959,21 @@ app.post('/api/mensagens', verificarToken, async (req, res) => {
         }
         
         const [result] = await db.query(
-            'INSERT INTO mensagens (empresa_id, usuario_id, mensagem, filial_origem, filial_destino) VALUES (?, ?, ?, ?, ?)',
-            [empresa_id, usuario_id, mensagem.trim(), filialOrigem, filialDestino]
+            'INSERT INTO mensagens (empresa_id, usuario_id, mensagem, filial_origem, filial_destino, reply_to_id) VALUES (?, ?, ?, ?, ?, ?)',
+            [empresa_id, usuario_id, mensagem.trim(), filialOrigem, filialDestino, replyToId || null]
         );
         
         console.log('✅ Mensagem inserida, ID:', result.insertId);
         
         // Buscar a mensagem recém-criada com dados do usuário
         const [mensagens] = await db.query(`
-            SELECT m.id, m.mensagem, m.created_at, m.filial_origem, m.filial_destino, m.reacoes,
-                   u.nome as usuario_nome, u.id as usuario_id
+            SELECT m.id, m.mensagem, m.created_at, m.filial_origem, m.filial_destino, m.reacoes, m.reply_to_id,
+                   u.nome as usuario_nome, u.id as usuario_id,
+                   rm.mensagem as reply_mensagem, ru.nome as reply_usuario_nome
             FROM mensagens m
             INNER JOIN usuarios u ON m.usuario_id = u.id
+            LEFT JOIN mensagens rm ON m.reply_to_id = rm.id
+            LEFT JOIN usuarios ru ON rm.usuario_id = ru.id
             WHERE m.id = ?
         `, [result.insertId]);
         

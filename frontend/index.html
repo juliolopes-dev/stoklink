@@ -217,6 +217,13 @@
         <div id="chat-messages" class="chat-messages">
             <p style="text-align: center; color: #6c757d; padding: 20px;">Selecione uma filial para conversar</p>
         </div>
+        <div id="chat-reply-preview" class="chat-reply-preview" style="display: none; margin: 0 15px;">
+            <div class="chat-reply-preview-content">
+                <div class="chat-reply-preview-header">Respondendo a <span id="chat-reply-preview-user"></span></div>
+                <div class="chat-reply-preview-text" id="chat-reply-preview-text"></div>
+            </div>
+            <button id="chat-reply-preview-close" class="chat-reply-preview-close">×</button>
+        </div>
         <div class="chat-input-container">
             <input type="text" id="chat-input" placeholder="Selecione uma filial primeiro..." maxlength="1000" disabled>
             <button id="chat-send" class="chat-send-btn" disabled>
