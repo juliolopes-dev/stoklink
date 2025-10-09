@@ -225,10 +225,18 @@
             <button id="chat-reply-preview-close" class="chat-reply-preview-close">×</button>
         </div>
         <div class="chat-input-container">
+            <button id="chat-emoji-btn" class="chat-emoji-btn" disabled>
+                <i data-lucide="smile"></i>
+            </button>
             <input type="text" id="chat-input" placeholder="Selecione uma filial primeiro..." maxlength="1000" disabled>
             <button id="chat-send" class="chat-send-btn" disabled>
                 <i data-lucide="send"></i>
             </button>
+            <div id="chat-emoji-picker" class="chat-emoji-picker-input" style="display: none;">
+                <div class="chat-emoji-picker-grid" id="chat-emoji-grid">
+                    <!-- Emojis serão inseridos via JavaScript -->
+                </div>
+            </div>
         </div>
     </div>
 

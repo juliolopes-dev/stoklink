@@ -634,6 +634,7 @@ i[data-lucide] {
     gap: 10px;
     background: white;
     border-radius: 0 0 16px 16px;
+    position: relative;
 }
 
 #chat-input {
@@ -671,6 +672,75 @@ i[data-lucide] {
 .chat-send-btn i {
     width: 18px;
     height: 18px;
+}
+
+/* ========================================
+   BOTÃO E PICKER DE EMOJI NO INPUT
+   ======================================== */
+
+.chat-emoji-btn {
+    width: 44px;
+    height: 44px;
+    background: #f8f9fa;
+    color: #495057;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.chat-emoji-btn:hover {
+    background: #e9ecef;
+    transform: scale(1.05);
+}
+
+.chat-emoji-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.chat-emoji-btn i {
+    width: 20px;
+    height: 20px;
+}
+
+.chat-emoji-picker-input {
+    position: absolute;
+    bottom: 75px;
+    left: 15px;
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    max-width: 320px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.chat-emoji-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+    padding: 10px;
+}
+
+.chat-emoji-picker-item {
+    font-size: 24px;
+    cursor: pointer;
+    text-align: center;
+    padding: 6px;
+    border-radius: 6px;
+    transition: all 0.2s;
+    user-select: none;
+}
+
+.chat-emoji-picker-item:hover {
+    background: #f8f9fa;
+    transform: scale(1.2);
 }
 
 /* ========================================
