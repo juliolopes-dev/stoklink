@@ -2,7 +2,13 @@
 // CONFIGURAÇÃO DA API
 // ====================================
 
-const API_URL = window.location.origin;
+// Detectar ambiente automaticamente
+const isLocal = window.location.hostname === 'localhost' || 
+                window.location.hostname === '127.0.0.1' || 
+                window.location.hostname.includes('192.168') ||
+                window.location.protocol === 'file:';
+
+const API_URL = isLocal ? 'http://localhost:3001' : window.location.origin;
 
 // Função auxiliar para fazer requisições autenticadas
 async function apiFetch(endpoint, options = {}) {

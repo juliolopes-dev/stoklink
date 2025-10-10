@@ -237,6 +237,63 @@ p.subtitle {
 .transfer-card strong { color: #343a40; font-weight: 500;}
 .transfer-card span { color: #6c757d; }
 
+/* ========================================
+   TABELA DE TRANSFERÊNCIAS
+   ======================================== */
+
+.transfer-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.transfer-table thead {
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    color: white;
+}
+
+.transfer-table th {
+    padding: 15px 20px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.transfer-table tbody tr {
+    border-bottom: 1px solid #e9ecef;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.transfer-table tbody tr:hover {
+    background-color: #f8f9fa;
+    transform: scale(1.01);
+}
+
+.transfer-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.transfer-table td {
+    padding: 15px 20px;
+    font-size: 14px;
+    color: #495057;
+}
+
+.transfer-table td strong {
+    color: #1e3c72;
+    font-weight: 600;
+}
+
+.transfer-table .tags-container {
+    margin: 0;
+}
+
 /* Estilos para Tags Melhorados */
 .tags-container { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; }
 .tag-item {
@@ -269,6 +326,13 @@ p.subtitle {
     padding: 5px 12px; border-radius: 15px; color: white; font-weight: 500;
     font-size: 14px; text-align: center; display: inline-block;
 }
+/* Novos status com emojis e cores */
+.status-aguardando-separacao { background-color: #ff9800; color: rgb(255, 255, 255) !important;} /* Laranja - Aguardando */
+.status-separado { background-color: #8bc34a; color: rgb(255, 255, 255) !important;} /* Verde claro - Separado */
+.status-em-transito { background-color: #2196f3; color: rgb(255, 255, 255) !important;} /* Azul - Em Trânsito */
+.status-cancelado { background-color: #f44336; color: rgb(255, 255, 255) !important;} /* Vermelho - Cancelado */
+
+/* Status antigos (manter compatibilidade) */
 .status-rascunho { background-color: #607d8b; color: rgb(255, 255, 255) !important;}
 .status-pendente { background-color: #c62828; color: rgb(255, 255, 255) !important;}
 .status-em-separacao { background-color: #4caf50; color: rgb(255, 255, 255) !important;}
@@ -765,11 +829,11 @@ i[data-lucide] {
 .chat-search-input {
     flex: 1;
     padding: 8px 12px;
-    border: 1px solid #47515b;
+    border: 1px solid #1a1a1a;
     border-radius: 6px;
     font-size: 13px;
     outline: none;
-    background: rgb(45, 89, 193);
+    background: rgb(255, 255, 255);
 }
 
 .chat-search-input:focus {
@@ -838,13 +902,13 @@ i[data-lucide] {
 
 .chat-reaction:hover {
     transform: scale(1.1);
-    background: white;
+    background: lch(100% 0.01 296.81);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .chat-reaction.reacted {
-    background: #e3f2fd;
-    border-color: #2a5298;
+    background: #ffffff;
+    border-color: #ffffff;
 }
 
 .chat-reaction-emoji {
@@ -1010,15 +1074,16 @@ i[data-lucide] {
     right: 50px;
     width: 28px;
     height: 28px;
-    background: white;
-    border: 1px solid #dee2e6;
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    border: 1px solid #2a5298;
     border-radius: 50%;
     display: none;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     transition: all 0.2s;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    color: white;
 }
 
 .chat-message:hover .chat-message-reply-btn {
@@ -1027,12 +1092,14 @@ i[data-lucide] {
 
 .chat-message-reply-btn:hover {
     transform: scale(1.1);
-    background: #f8f9fa;
+    background: #1e3c72;
+    box-shadow: 0 4px 12px rgba(30, 60, 114, 0.3);
 }
 
 .chat-message-reply-btn i {
     width: 14px;
     height: 14px;
+    color: white;
 }
 
 /* Responsivo */

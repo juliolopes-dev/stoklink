@@ -323,7 +323,16 @@
     <script>
         lucide.createIcons();
 
-        const API_URL = window.location.origin;
+        // Detectar ambiente automaticamente
+        const isLocal = window.location.hostname === 'localhost' || 
+                        window.location.hostname === '127.0.0.1' || 
+                        window.location.hostname.includes('192.168') ||
+                        window.location.protocol === 'file:';
+        
+        const API_URL = isLocal ? 'http://localhost:3001' : window.location.origin;
+        
+        console.log('🔧 Ambiente:', isLocal ? 'Desenvolvimento Local' : 'Produção');
+        console.log('🌐 API URL:', API_URL);
         const form = document.getElementById('login-form');
         const errorMessage = document.getElementById('error-message');
 
@@ -339,13 +348,19 @@
             btnSubmit.textContent = 'Entrando...';
 
             try {
+                console.log('🔧 Tentando fazer login...');
+                console.log('🌐 API_URL:', API_URL);
+                console.log('📍 URL completa:', `${API_URL}/api/auth/login`);
+                
                 const response = await fetch(`${API_URL}/api/auth/login`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, senha })
                 });
 
+                console.log('✅ Resposta recebida:', response.status);
                 const data = await response.json();
+                console.log('📦 Dados:', data);
 
                 if (response.ok) {
                     // Salvar token e dados do usuário

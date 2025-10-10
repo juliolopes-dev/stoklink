@@ -2,7 +2,19 @@
 // CONFIGURAÇÃO DA API
 // ====================================
 
-const API_URL = window.location.origin;
+console.log('✅ app.js carregado!');
+
+// Detectar ambiente automaticamente
+const isLocal = window.location.hostname === 'localhost' || 
+                window.location.hostname === '127.0.0.1' || 
+                window.location.hostname.includes('192.168') ||
+                window.location.protocol === 'file:';
+
+const API_URL = isLocal ? 'http://localhost:3001' : window.location.origin;
+
+console.log('🔧 Ambiente:', isLocal ? 'Desenvolvimento Local' : 'Produção');
+console.log('🌐 API URL:', API_URL);
+console.log('📍 Hostname:', window.location.hostname);
 
 // Função auxiliar para fazer requisições autenticadas
 async function apiFetch(endpoint, options = {}) {
@@ -274,31 +286,54 @@ document.addEventListener('DOMContentLoaded', function() {
             container.innerHTML = '<p>Nenhuma transferência encontrada.</p>'; 
             return; 
         }
+        
+        // Criar tabela
+        const table = document.createElement('table');
+        table.className = 'transfer-table';
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Origem</th>
+                    <th>Destino</th>
+                    <th>Solicitante</th>
+                    <th>Nº Interno</th>
+                    <th>Status</th>
+                    <th>Tags</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        `;
+        
+        const tbody = table.querySelector('tbody');
+        
         data.forEach(t => {
-            const card = document.createElement('div');
-            card.className = 'card transfer-card';
-            card.dataset.id = t.id;
             const statusInfo = getStatusInfo(t.status);
+            const row = document.createElement('tr');
+            row.className = 'transfer-row';
+            row.dataset.id = t.id;
             
-            // Adicionar número interno se existir
-            const numeroInterno = t.numeroTransferenciaInterna 
-                ? `<div><strong>Nº Interno:</strong><span> ${t.numeroTransferenciaInterna}</span></div>` 
-                : '';
+            const numeroInterno = t.numeroTransferenciaInterna || '-';
             
-            card.innerHTML = `
-                <strong>${t.id}</strong>
-                <div><strong>Origem:</strong><span> ${t.origem}</span></div>
-                <div><strong>Destino:</strong><span> ${t.destino}</span></div>
-                <div><strong>Solicitante:</strong><span> ${t.solicitante}</span></div>
-                ${numeroInterno}
-                <div class="tags-container">${renderTags(t.tags)}</div>
-                <span class="status-tag ${statusInfo.className}">${statusInfo.text}</span>`;
-            card.addEventListener('click', () => {
+            row.innerHTML = `
+                <td><strong>${t.id}</strong></td>
+                <td>${t.origem}</td>
+                <td>${t.destino}</td>
+                <td>${t.solicitante}</td>
+                <td>${numeroInterno}</td>
+                <td><span class="status-tag ${statusInfo.className}">${statusInfo.text}</span></td>
+                <td><div class="tags-container">${renderTags(t.tags)}</div></td>
+            `;
+            
+            row.addEventListener('click', () => {
                 previousView = (container === dashboardTransferList) ? 'dashboard' : 'visualizacao';
                 showDetalhes(t.id);
             });
-            container.appendChild(card);
+            
+            tbody.appendChild(row);
         });
+        
+        container.appendChild(table);
         lucide.createIcons();
     }
     function updateDashboard() {
@@ -350,10 +385,21 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         const acoesContainer = document.getElementById('detalhe-acoes');
         acoesContainer.innerHTML = '';
+        
+        // Novos status com workflow
         if (t.status === 'rascunho') {
+            const btnEditar = document.createElement('button');
+            btnEditar.className = 'btn btn-secondary'; 
+            btnEditar.innerHTML = '<i data-lucide="edit"></i> Editar Rascunho';
+            btnEditar.onclick = () => {
+                editarRascunho(t.id);
+            };
+            acoesContainer.appendChild(btnEditar);
+            
             const btnEnviar = document.createElement('button');
             btnEnviar.className = 'btn btn-primary'; 
             btnEnviar.innerHTML = '<i data-lucide="send"></i> Enviar Solicitação';
+            btnEnviar.style.marginLeft = '10px';
             btnEnviar.onclick = async () => {
                 const confirmado = await showConfirm(
                     'Deseja enviar esta solicitação de transferência?',
@@ -361,44 +407,114 @@ document.addEventListener('DOMContentLoaded', function() {
                     'info'
                 );
                 if (confirmado) {
-                    await mudarStatus(t.id, 'pendente');
-                    await showAlert('Solicitação enviada com sucesso!', 'Sucesso', 'success');
+                    await atualizarEtapa(t.id, 'aguardando_separacao');
+                    await showAlert('Solicitação enviada! Aguardando separação.', 'Sucesso', 'success');
                 }
             };
             acoesContainer.appendChild(btnEnviar);
-        } else if (t.status === 'pendente') {
+        } else if (t.status === 'aguardando_separacao') {
             const btn = document.createElement('button');
             btn.className = 'btn btn-info'; 
             btn.innerHTML = '<i data-lucide="play"></i> Iniciar Separação';
-            btn.onclick = () => mudarStatus(t.id, 'em_separacao');
+            btn.onclick = async () => {
+                await atualizarEtapa(t.id, 'em_separacao');
+                await showAlert('Separação iniciada!', 'Sucesso', 'success');
+            };
             acoesContainer.appendChild(btn);
         } else if (t.status === 'em_separacao') {
             const btn = document.createElement('button');
             btn.className = 'btn btn-success'; 
             btn.innerHTML = '<i data-lucide="package-check"></i> Finalizar Separação';
-            btn.onclick = () => finalizarSeparacao(t.id);
+            btn.onclick = async () => {
+                await atualizarEtapa(t.id, 'separado');
+                await showAlert('Produtos separados com sucesso!', 'Sucesso', 'success');
+            };
             acoesContainer.appendChild(btn);
-        } else if (t.status === 'aguardando_lancamento') {
-            acoesContainer.innerHTML = `<div class="form-group"><label for="input-transf-interna">Nº da Transferência (Sistema Principal) *</label><input type="text" id="input-transf-interna" placeholder="Digite o número da transferência"></div><button class="btn btn-primary" id="btn-lancar-transferencia"><i data-lucide="send"></i> Lançamento Concluído</button>`;
-            acoesContainer.querySelector('#btn-lancar-transferencia').onclick = () => lancarTransferencia(t.id);
-        } else if (t.status === 'concluido') {
+        } else if (t.status === 'separado') {
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-primary'; 
+            btn.innerHTML = '<i data-lucide="truck"></i> Enviar para Destino';
+            btn.onclick = async () => {
+                const confirmado = await showConfirm(
+                    'Confirma o envio dos produtos para o destino?',
+                    'Confirmar Envio',
+                    'info'
+                );
+                if (confirmado) {
+                    await atualizarEtapa(t.id, 'em_transito');
+                    await showAlert('Produtos enviados! Em trânsito para o destino.', 'Sucesso', 'success');
+                }
+            };
+            acoesContainer.appendChild(btn);
+        } else if (t.status === 'em_transito') {
             const btnReceber = document.createElement('button');
             btnReceber.className = 'btn btn-success';
-            btnReceber.innerHTML = '<i data-lucide="check-circle"></i> Marcar como Recebido';
+            btnReceber.innerHTML = '<i data-lucide="check-circle"></i> Confirmar Recebimento';
             btnReceber.onclick = async () => {
                 const confirmado = await showConfirm(
-                    'Confirma o recebimento desta transferência no destino?',
+                    'Confirma o recebimento dos produtos no destino?',
                     'Confirmar Recebimento',
                     'info'
                 );
                 if (confirmado) {
-                    await mudarStatus(t.id, 'recebido');
-                    await showAlert('Transferência marcada como recebida!', 'Sucesso', 'success');
+                    await atualizarEtapa(t.id, 'recebido');
+                    await showAlert('Recebimento confirmado!', 'Sucesso', 'success');
                 }
             };
             acoesContainer.appendChild(btnReceber);
+        } else if (t.status === 'recebido') {
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-primary'; 
+            btn.innerHTML = '<i data-lucide="check-square"></i> Finalizar Transferência';
+            btn.onclick = async () => {
+                const confirmado = await showConfirm(
+                    'Deseja marcar esta transferência como concluída?',
+                    'Finalizar',
+                    'info'
+                );
+                if (confirmado) {
+                    await atualizarEtapa(t.id, 'concluido');
+                    await showAlert('Transferência concluída!', 'Sucesso', 'success');
+                }
+            };
+            acoesContainer.appendChild(btn);
+        } else if (t.status === 'concluido') {
+            // Verificar se tem data de recebimento (transferência nova) ou não (transferência antiga)
+            if (!t.data_recebimento) {
+                // Transferência antiga - permitir adicionar recebimento
+                const btnReceber = document.createElement('button');
+                btnReceber.className = 'btn btn-success';
+                btnReceber.innerHTML = '<i data-lucide="check-circle"></i> Marcar como Recebido';
+                btnReceber.onclick = async () => {
+                    const confirmado = await showConfirm(
+                        'Deseja registrar o recebimento desta transferência?',
+                        'Confirmar Recebimento',
+                        'info'
+                    );
+                    if (confirmado) {
+                        await atualizarEtapa(t.id, 'recebido');
+                        await showAlert('Recebimento registrado com sucesso!', 'Sucesso', 'success');
+                    }
+                };
+                acoesContainer.appendChild(btnReceber);
+            } else {
+                acoesContainer.innerHTML = '<p style="color: #28a745; font-weight: 600;">✅ Transferência concluída com sucesso!</p>';
+            } 
+        } else if (t.status === 'cancelado') {
+            acoesContainer.innerHTML = '<p style="color: #dc3545; font-weight: 600;">❌ Transferência cancelada.</p>'; 
+        } else if (t.status === 'pendente') {
+            // Compatibilidade com status antigo
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-info'; 
+            btn.innerHTML = '<i data-lucide="play"></i> Iniciar Separação';
+            btn.onclick = () => mudarStatus(t.id, 'em_separacao');
+            acoesContainer.appendChild(btn);
+        } else if (t.status === 'aguardando_lancamento') {
+            // Compatibilidade com status antigo
+            acoesContainer.innerHTML = `<div class="form-group"><label for="input-transf-interna">Nº da Transferência (Sistema Principal) *</label><input type="text" id="input-transf-interna" placeholder="Digite o número da transferência"></div><button class="btn btn-primary" id="btn-lancar-transferencia"><i data-lucide="send"></i> Lançamento Concluído</button>`;
+            acoesContainer.querySelector('#btn-lancar-transferencia').onclick = () => lancarTransferencia(t.id);
         } else { 
-            acoesContainer.innerHTML = '<p>Esta transferência foi finalizada.</p>'; 
+            acoesContainer.innerHTML = '<p>Status desconhecido.</p>'; 
         }
         
         // Mostrar timestamps se existirem
@@ -483,11 +599,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const getStatusInfo = (status) => {
         switch(status) {
             case 'rascunho': return { text: 'Rascunho', className: 'status-rascunho' };
+            case 'aguardando_separacao': return { text: '⏳ Aguardando Separação', className: 'status-aguardando-separacao' };
+            case 'em_separacao': return { text: '📦 Em Separação', className: 'status-em-separacao' };
+            case 'separado': return { text: '✅ Separado', className: 'status-separado' };
+            case 'em_transito': return { text: '🚚 Em Trânsito', className: 'status-em-transito' };
+            case 'recebido': return { text: '✔️ Recebido', className: 'status-recebido' };
+            case 'concluido': return { text: '🎉 Concluído', className: 'status-concluido' };
+            case 'cancelado': return { text: '❌ Cancelado', className: 'status-cancelado' };
+            // Status antigos (manter compatibilidade)
             case 'pendente': return { text: 'Pendente', className: 'status-pendente' };
-            case 'em_separacao': return { text: 'Em Separação', className: 'status-em-separacao' };
             case 'aguardando_lancamento': return { text: 'Aguardando Lançamento', className: 'status-aguardando-lancamento' };
-            case 'concluido': return { text: 'Concluído', className: 'status-concluido' };
-            case 'recebido': return { text: 'Recebido', className: 'status-recebido' };
             default: return { text: 'Desconhecido', className: '' };
         }
     };
@@ -507,6 +628,27 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         } catch (error) {
             console.error('Erro ao mudar status:', error);
+            await showAlert('Erro de conexão com o servidor', 'Erro', 'danger');
+        }
+    }
+    
+    // Nova função para atualizar etapa com novo endpoint
+    async function atualizarEtapa(transferId, novoStatus) {
+        try {
+            const response = await apiFetch(`/api/transferencias/${transferId}/etapa`, {
+                method: 'PUT',
+                body: JSON.stringify({ status: novoStatus })
+            });
+            
+            if (response.ok) {
+                await carregarTransferencias();
+                showDetalhes(transferId); 
+            } else {
+                const error = await response.json();
+                await showAlert(error.error || 'Erro ao atualizar status', 'Erro', 'danger');
+            }
+        } catch (error) {
+            console.error('Erro ao atualizar etapa:', error);
             await showAlert('Erro de conexão com o servidor', 'Erro', 'danger');
         }
     }
@@ -622,8 +764,58 @@ document.addEventListener('DOMContentLoaded', function() {
         lucide.createIcons();
     }
     
-    // Função editarRascunho desabilitada - será implementada com endpoint PUT na API
-    // function editarRascunho(transferId) { ... }
+    // Editar Rascunho
+    function editarRascunho(transferId) {
+        const t = transferencias.find(tr => tr.id === transferId);
+        if (!t) {
+            showAlert('Rascunho não encontrado', 'Erro', 'danger');
+            return;
+        }
+        
+        // Marcar que está editando
+        editandoRascunhoId = transferId;
+        
+        // Preencher formulário
+        document.getElementById('origem').value = t.origem;
+        document.getElementById('destino').value = t.destino;
+        document.getElementById('solicitante').value = t.solicitante;
+        
+        // Carregar tags
+        currentTransferTags = [...(t.tags || [])];
+        renderFormTags();
+        
+        // Limpar itens existentes
+        itensContainer.innerHTML = '';
+        
+        // Adicionar itens do rascunho
+        t.itens.forEach(item => {
+            const itemRow = document.createElement('div');
+            itemRow.className = 'item-row';
+            itemRow.innerHTML = `
+                <div class="form-group">
+                    <label>Código do Produto *</label>
+                    <input type="text" class="item-codigo" required placeholder="Código do produto" value="${item.codigo}">
+                </div>
+                <div class="form-group">
+                    <label>Qtd. Solicitada *</label>
+                    <input type="number" class="item-quantidade" required min="1" placeholder="Ex: 10" value="${item.solicitada}">
+                </div>
+                <button type="button" class="btn-remover-item">
+                    <i data-lucide="trash-2"></i>
+                </button>
+            `;
+            itemRow.querySelector('.btn-remover-item').addEventListener('click', () => itemRow.remove());
+            itensContainer.appendChild(itemRow);
+        });
+        
+        lucide.createIcons();
+        
+        // Mudar para view de cadastro
+        showView('cadastro');
+        
+        // Mostrar mensagem
+        showAlert('Rascunho carregado! Faça as alterações e clique em "Salvar Rascunho".', 'Editando Rascunho', 'info');
+    }
     
     async function salvarRascunho(comoRascunho = true) {
         const itens = [];
@@ -646,21 +838,40 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         
         try {
-            const novaTransferencia = {
-                id: generateNewId(),
-                origem: document.getElementById('origem').value,
-                destino: document.getElementById('destino').value,
-                solicitante: document.getElementById('solicitante').value,
-                tags: [...currentTransferTags],
-                data: new Date().toISOString().split('T')[0], 
-                status: comoRascunho ? 'rascunho' : 'pendente',
-                itens: itens
-            };
+            let response;
             
-            const response = await apiFetch('/api/transferencias', {
-                method: 'POST',
-                body: JSON.stringify(novaTransferencia)
-            });
+            if (editandoRascunhoId) {
+                // Atualizando rascunho existente
+                const transferencia = {
+                    origem: document.getElementById('origem').value,
+                    destino: document.getElementById('destino').value,
+                    solicitante: document.getElementById('solicitante').value,
+                    tags: [...currentTransferTags],
+                    itens: itens
+                };
+                
+                response = await apiFetch(`/api/transferencias/${editandoRascunhoId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(transferencia)
+                });
+            } else {
+                // Criando nova transferência
+                const novaTransferencia = {
+                    id: generateNewId(),
+                    origem: document.getElementById('origem').value,
+                    destino: document.getElementById('destino').value,
+                    solicitante: document.getElementById('solicitante').value,
+                    tags: [...currentTransferTags],
+                    data: new Date().toISOString().split('T')[0], 
+                    status: comoRascunho ? 'rascunho' : 'pendente',
+                    itens: itens
+                };
+                
+                response = await apiFetch('/api/transferencias', {
+                    method: 'POST',
+                    body: JSON.stringify(novaTransferencia)
+                });
+            }
             
             if (response.ok) {
                 form.reset(); 
@@ -668,6 +879,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 currentTransferTags = []; 
                 renderFormTags(); 
                 adicionarItem();
+                
+                const mensagem = editandoRascunhoId ? 'Rascunho atualizado com sucesso!' : 'Transferência salva com sucesso!';
+                await showAlert(mensagem, 'Sucesso', 'success');
+                
                 editandoRascunhoId = null;
                 
                 // Recarregar transferências
@@ -926,32 +1141,53 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
+        // Criar tabela
+        const table = document.createElement('table');
+        table.className = 'transfer-table';
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Origem</th>
+                    <th>Destino</th>
+                    <th>Solicitante</th>
+                    <th>Nº Interno</th>
+                    <th>Status</th>
+                    <th>Tags</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        `;
+        
+        const tbody = table.querySelector('tbody');
+        
         data.forEach(t => {
-            const card = document.createElement('div');
-            card.className = 'card transfer-card';
-            card.dataset.id = t.id;
             const statusInfo = getStatusInfo(t.status);
+            const row = document.createElement('tr');
+            row.className = 'transfer-row';
+            row.dataset.id = t.id;
             
-            // Adicionar número interno se existir
-            const numeroInterno = t.numeroTransferenciaInterna 
-                ? `<div><strong>Nº Interno:</strong><span> ${t.numeroTransferenciaInterna}</span></div>` 
-                : '';
+            const numeroInterno = t.numeroTransferenciaInterna || '-';
             
-            card.innerHTML = `
-                <strong>${t.id}</strong>
-                <div><strong>Origem:</strong><span> ${t.origem}</span></div>
-                <div><strong>Destino:</strong><span> ${t.destino}</span></div>
-                <div><strong>Solicitante:</strong><span> ${t.solicitante}</span></div>
-                ${numeroInterno}
-                <div class="tags-container">${renderTags(t.tags)}</div>
-                <span class="status-tag ${statusInfo.className}">${statusInfo.text}</span>`;
-            card.addEventListener('click', () => {
+            row.innerHTML = `
+                <td><strong>${t.id}</strong></td>
+                <td>${t.origem}</td>
+                <td>${t.destino}</td>
+                <td>${t.solicitante}</td>
+                <td>${numeroInterno}</td>
+                <td><span class="status-tag ${statusInfo.className}">${statusInfo.text}</span></td>
+                <td><div class="tags-container">${renderTags(t.tags)}</div></td>
+            `;
+            
+            row.addEventListener('click', () => {
                 previousView = 'visualizacao';
                 showDetalhes(t.id);
             });
-            transferListContainer.appendChild(card);
+            
+            tbody.appendChild(row);
         });
         
+        transferListContainer.appendChild(table);
         lucide.createIcons();
     }
     
@@ -1186,7 +1422,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Renderizar mensagens
-    function renderizarMensagens(termoBusca = '') {
+    function renderizarMensagens(termoBusca = '', forcarScroll = false) {
         if (mensagens.length === 0) {
             chatMessages.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">Nenhuma mensagem ainda. Seja o primeiro a conversar!</p>';
             return;
@@ -1198,6 +1434,9 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         const usuarioId = usuario.id;
+        
+        // Verificar se o usuário está perto do final (tolerância de 100px)
+        const estaNoFinal = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 100;
         
         // Filtrar mensagens pela busca
         let mensagensFiltradas = mensagens;
@@ -1341,8 +1580,15 @@ document.addEventListener('DOMContentLoaded', function() {
             document.querySelectorAll('.chat-reaction-picker').forEach(p => p.classList.remove('active'));
         });
         
-        // Scroll para o final
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        // Scroll para o final APENAS se:
+        // 1. Forçado (enviou mensagem nova)
+        // 2. Usuário estava no final E não está buscando
+        if (forcarScroll || (estaNoFinal && !termoBusca)) {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        // Renderizar ícones Lucide
+        lucide.createIcons();
     }
     
     // Reagir a uma mensagem
@@ -1416,7 +1662,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const novaMensagem = await response.json();
                 mensagens.push(novaMensagem);
                 ultimoIdMensagem = novaMensagem.id;
-                renderizarMensagens();
+                renderizarMensagens('', true); // Forçar scroll ao enviar mensagem
                 chatInput.value = '';
                 esconderReplyPreview(); // Esconder preview após enviar
             } else {

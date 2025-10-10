@@ -11,8 +11,18 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middlewares
-app.use(cors());
+app.use(cors({
+    origin: '*', // Permitir todas as origens em desenvolvimento
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    credentials: true
+}));
 app.use(express.json());
+
+// Log de todas as requisições
+app.use((req, res, next) => {
+    console.log(`📨 ${req.method} ${req.path} - ${new Date().toLocaleTimeString()}`);
+    next();
+});
 
 // Servir arquivos estáticos do frontend
 app.use(express.static(path.join(__dirname, '../frontend')));
@@ -389,6 +399,98 @@ app.post('/api/transferencias', verificarToken, async (req, res) => {
     }
 });
 
+// PUT - Atualizar rascunho
+app.put('/api/transferencias/:id', verificarToken, async (req, res) => {
+    const { origem, destino, solicitante, tags, itens } = req.body;
+    const id = req.params.id;
+    
+    const connection = await db.getConnection();
+    
+    try {
+        await connection.beginTransaction();
+        
+        // Verificar se é um rascunho
+        const [transf] = await connection.query(
+            'SELECT status FROM transferencias WHERE id = ?',
+            [id]
+        );
+        
+        if (transf.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ error: 'Transferência não encontrada' });
+        }
+        
+        if (transf[0].status !== 'rascunho') {
+            await connection.rollback();
+            return res.status(400).json({ error: 'Apenas rascunhos podem ser editados' });
+        }
+        
+        // Atualizar transferência
+        await connection.query(
+            'UPDATE transferencias SET origem = ?, destino = ?, solicitante = ? WHERE id = ?',
+            [origem, destino, solicitante, id]
+        );
+        
+        // Remover itens antigos
+        await connection.query(
+            'DELETE FROM itens_transferencia WHERE transferencia_id = ?',
+            [id]
+        );
+        
+        // Inserir novos itens
+        if (itens && itens.length > 0) {
+            for (let item of itens) {
+                await connection.query(
+                    'INSERT INTO itens_transferencia (transferencia_id, codigo_produto, quantidade_solicitada, quantidade_atendida) VALUES (?, ?, ?, ?)',
+                    [id, item.codigo, item.solicitada, item.atendida || 0]
+                );
+            }
+        }
+        
+        // Remover tags antigas
+        await connection.query(
+            'DELETE FROM transferencia_tags WHERE transferencia_id = ?',
+            [id]
+        );
+        
+        // Inserir novas tags
+        if (tags && tags.length > 0) {
+            const empresa_id = req.usuario.empresa_id;
+            for (let tagNome of tags) {
+                let [tagRows] = await connection.query(
+                    'SELECT id FROM tags WHERE nome = ? AND empresa_id = ?',
+                    [tagNome, empresa_id]
+                );
+                let tagId;
+                
+                if (tagRows.length === 0) {
+                    const [result] = await connection.query(
+                        'INSERT INTO tags (nome, empresa_id) VALUES (?, ?)',
+                        [tagNome, empresa_id]
+                    );
+                    tagId = result.insertId;
+                } else {
+                    tagId = tagRows[0].id;
+                }
+                
+                await connection.query(
+                    'INSERT INTO transferencia_tags (transferencia_id, tag_id) VALUES (?, ?)',
+                    [id, tagId]
+                );
+            }
+        }
+        
+        await connection.commit();
+        res.json({ message: 'Rascunho atualizado com sucesso' });
+    } catch (error) {
+        await connection.rollback();
+        console.error('Erro ao atualizar rascunho:', error);
+        res.status(500).json({ error: 'Erro ao atualizar rascunho' });
+    } finally {
+        connection.release();
+    }
+});
+
 // PUT - Atualizar status da transferência
 app.put('/api/transferencias/:id/status', verificarToken, async (req, res) => {
     const { status } = req.body;
@@ -443,6 +545,64 @@ app.put('/api/transferencias/:id/itens', verificarToken, async (req, res) => {
         res.status(500).json({ error: 'Erro ao atualizar itens' });
     } finally {
         connection.release();
+    }
+});
+
+// PUT - Atualizar etapa/status da transferência
+app.put('/api/transferencias/:id/etapa', verificarToken, async (req, res) => {
+    const { status } = req.body;
+    const id = req.params.id;
+    
+    let query = ''; // Declarar fora do try para acessar no catch
+    let params = [];
+    
+    try {
+        // Validar status
+        const statusValidos = ['aguardando_separacao', 'em_separacao', 'separado', 'em_transito', 'recebido', 'concluido', 'cancelado'];
+        if (!statusValidos.includes(status)) {
+            return res.status(400).json({ error: 'Status inválido' });
+        }
+        
+        // Verificar se as colunas de data existem
+        const [columns] = await db.query(`
+            SELECT COLUMN_NAME 
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_NAME = 'transferencias' 
+            AND TABLE_SCHEMA = DATABASE()
+        `);
+        
+        const columnNames = columns.map(c => c.COLUMN_NAME);
+        const hasDateColumns = columnNames.includes('data_inicio_separacao');
+        
+        // Atualizar data baseado no status (apenas se as colunas existirem)
+        let campoData = null;
+        if (hasDateColumns) {
+            if (status === 'em_separacao') campoData = 'data_inicio_separacao';
+            else if (status === 'separado') campoData = 'data_fim_separacao';
+            else if (status === 'recebido' || status === 'concluido') campoData = 'data_recebimento';
+        }
+        
+        query = 'UPDATE transferencias SET status = ?';
+        params = [status];
+        
+        if (campoData) {
+            query += `, ${campoData} = NOW()`;
+        }
+        
+        query += ' WHERE id = ?';
+        params.push(id);
+        
+        console.log('🔄 Atualizando status:', { id, status, query, params, hasDateColumns });
+        
+        await db.query(query, params);
+        
+        console.log('✅ Status atualizado com sucesso');
+        res.json({ message: 'Status atualizado com sucesso', status });
+    } catch (error) {
+        console.error('❌ Erro ao atualizar status:', error);
+        console.error('Query:', query);
+        console.error('Params:', params);
+        res.status(500).json({ error: 'Erro ao atualizar status', detalhes: error.message });
     }
 });
 
