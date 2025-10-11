@@ -294,6 +294,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <thead>
                 <tr>
                     <th>ID</th>
+                    <th>Data</th>
                     <th>Origem</th>
                     <th>Destino</th>
                     <th>Solicitante</th>
@@ -314,9 +315,11 @@ document.addEventListener('DOMContentLoaded', function() {
             row.dataset.id = t.id;
             
             const numeroInterno = t.numeroTransferenciaInterna || '-';
+            const dataFormatada = t.data ? new Date(t.data).toLocaleDateString('pt-BR') : '-';
             
             row.innerHTML = `
                 <td><strong>${t.id}</strong></td>
+                <td>${dataFormatada}</td>
                 <td>${t.origem}</td>
                 <td>${t.destino}</td>
                 <td>${t.solicitante}</td>
@@ -345,7 +348,7 @@ document.addEventListener('DOMContentLoaded', function() {
         animateCountUp(document.getElementById('summary-pendente'), pendentes);
         animateCountUp(document.getElementById('summary-separacao'), separacao);
         animateCountUp(document.getElementById('summary-lancamento'), lancamento);
-        renderTransferList(dashboardTransferList, t => t.status !== 'concluido');
+        renderTransferList(dashboardTransferList, t => t.status !== 'recebido' && t.status !== 'concluido');
     }
     function showDetalhes(transferId) {
         const t = transferencias.find(transf => transf.id === transferId); 
@@ -433,51 +436,30 @@ document.addEventListener('DOMContentLoaded', function() {
         } else if (t.status === 'separado') {
             const btn = document.createElement('button');
             btn.className = 'btn btn-primary'; 
-            btn.innerHTML = '<i data-lucide="truck"></i> Enviar para Destino';
+            btn.innerHTML = '<i data-lucide="clipboard-check"></i> Enviar para Lançamento';
             btn.onclick = async () => {
-                const confirmado = await showConfirm(
-                    'Confirma o envio dos produtos para o destino?',
-                    'Confirmar Envio',
-                    'info'
-                );
-                if (confirmado) {
-                    await atualizarEtapa(t.id, 'em_transito');
-                    await showAlert('Produtos enviados! Em trânsito para o destino.', 'Sucesso', 'success');
-                }
+                await atualizarEtapa(t.id, 'aguardando_lancamento');
+                await showAlert('Transferência enviada para lançamento no sistema!', 'Sucesso', 'success');
             };
             acoesContainer.appendChild(btn);
-        } else if (t.status === 'em_transito') {
+        } else if (t.status === 'aguardando_lancamento') {
             const btnReceber = document.createElement('button');
             btnReceber.className = 'btn btn-success';
             btnReceber.innerHTML = '<i data-lucide="check-circle"></i> Confirmar Recebimento';
             btnReceber.onclick = async () => {
                 const confirmado = await showConfirm(
-                    'Confirma o recebimento dos produtos no destino?',
+                    'Confirma o recebimento dos produtos no destino? Isso finalizará a transferência.',
                     'Confirmar Recebimento',
                     'info'
                 );
                 if (confirmado) {
                     await atualizarEtapa(t.id, 'recebido');
-                    await showAlert('Recebimento confirmado!', 'Sucesso', 'success');
+                    await showAlert('Transferência finalizada com sucesso!', 'Sucesso', 'success');
                 }
             };
             acoesContainer.appendChild(btnReceber);
         } else if (t.status === 'recebido') {
-            const btn = document.createElement('button');
-            btn.className = 'btn btn-primary'; 
-            btn.innerHTML = '<i data-lucide="check-square"></i> Finalizar Transferência';
-            btn.onclick = async () => {
-                const confirmado = await showConfirm(
-                    'Deseja marcar esta transferência como concluída?',
-                    'Finalizar',
-                    'info'
-                );
-                if (confirmado) {
-                    await atualizarEtapa(t.id, 'concluido');
-                    await showAlert('Transferência concluída!', 'Sucesso', 'success');
-                }
-            };
-            acoesContainer.appendChild(btn);
+            acoesContainer.innerHTML = '<p style="color: #28a745; font-weight: 600;">✅ Transferência finalizada com sucesso!</p>';
         } else if (t.status === 'concluido') {
             // Verificar se tem data de recebimento (transferência nova) ou não (transferência antiga)
             if (!t.data_recebimento) {
@@ -602,13 +584,12 @@ document.addEventListener('DOMContentLoaded', function() {
             case 'aguardando_separacao': return { text: '⏳ Aguardando Separação', className: 'status-aguardando-separacao' };
             case 'em_separacao': return { text: '📦 Em Separação', className: 'status-em-separacao' };
             case 'separado': return { text: '✅ Separado', className: 'status-separado' };
-            case 'em_transito': return { text: '🚚 Em Trânsito', className: 'status-em-transito' };
-            case 'recebido': return { text: '✔️ Recebido', className: 'status-recebido' };
+            case 'aguardando_lancamento': return { text: '📋 Aguardando Lançamento', className: 'status-aguardando-lancamento' };
+            case 'recebido': return { text: '🎉 Finalizado', className: 'status-recebido' };
             case 'concluido': return { text: '🎉 Concluído', className: 'status-concluido' };
             case 'cancelado': return { text: '❌ Cancelado', className: 'status-cancelado' };
             // Status antigos (manter compatibilidade)
             case 'pendente': return { text: 'Pendente', className: 'status-pendente' };
-            case 'aguardando_lancamento': return { text: 'Aguardando Lançamento', className: 'status-aguardando-lancamento' };
             default: return { text: 'Desconhecido', className: '' };
         }
     };
@@ -1071,7 +1052,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- Filtros ---
     const filtroTag = document.getElementById('filtro-tag');
-    const filtroFilial = document.getElementById('filtro-filial');
+    const filtroOrigem = document.getElementById('filtro-origem');
+    const filtroDestino = document.getElementById('filtro-destino');
     const filtroProduto = document.getElementById('filtro-produto');
     const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
     const btnLimparFiltros = document.getElementById('btn-limpar-filtros');
@@ -1087,15 +1069,22 @@ document.addEventListener('DOMContentLoaded', function() {
             filtroTag.appendChild(option);
         });
         
-        // Popular filiais
+        // Popular filiais de origem e destino
         const selectOrigem = document.getElementById('origem');
-        filtroFilial.innerHTML = '<option value="">Todas as Filiais</option>';
+        filtroOrigem.innerHTML = '<option value="">Todas as Origens</option>';
+        filtroDestino.innerHTML = '<option value="">Todos os Destinos</option>';
+        
         Array.from(selectOrigem.options).forEach(opt => {
             if (opt.value) {
-                const option = document.createElement('option');
-                option.value = opt.value;
-                option.textContent = opt.textContent;
-                filtroFilial.appendChild(option);
+                const optionOrigem = document.createElement('option');
+                optionOrigem.value = opt.value;
+                optionOrigem.textContent = opt.textContent;
+                filtroOrigem.appendChild(optionOrigem);
+                
+                const optionDestino = document.createElement('option');
+                optionDestino.value = opt.value;
+                optionDestino.textContent = opt.textContent;
+                filtroDestino.appendChild(optionDestino);
             }
         });
     }
@@ -1103,7 +1092,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Aplicar filtros
     function aplicarFiltros() {
         const tagSelecionada = filtroTag.value.toLowerCase();
-        const filialSelecionada = filtroFilial.value.toLowerCase();
+        const origemSelecionada = filtroOrigem.value.toLowerCase();
+        const destinoSelecionado = filtroDestino.value.toLowerCase();
         const produtoDigitado = filtroProduto.value.toLowerCase().trim();
         
         const filtrados = transferencias.filter(t => {
@@ -1112,10 +1102,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 return false;
             }
             
-            // Filtro por filial (origem OU destino)
-            if (filialSelecionada && 
-                t.origem.toLowerCase() !== filialSelecionada && 
-                t.destino.toLowerCase() !== filialSelecionada) {
+            // Filtro por origem
+            if (origemSelecionada && t.origem.toLowerCase() !== origemSelecionada) {
+                return false;
+            }
+            
+            // Filtro por destino
+            if (destinoSelecionado && t.destino.toLowerCase() !== destinoSelecionado) {
                 return false;
             }
             
@@ -1148,6 +1141,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <thead>
                 <tr>
                     <th>ID</th>
+                    <th>Data</th>
                     <th>Origem</th>
                     <th>Destino</th>
                     <th>Solicitante</th>
@@ -1168,9 +1162,11 @@ document.addEventListener('DOMContentLoaded', function() {
             row.dataset.id = t.id;
             
             const numeroInterno = t.numeroTransferenciaInterna || '-';
+            const dataFormatada = t.data ? new Date(t.data).toLocaleDateString('pt-BR') : '-';
             
             row.innerHTML = `
                 <td><strong>${t.id}</strong></td>
+                <td>${dataFormatada}</td>
                 <td>${t.origem}</td>
                 <td>${t.destino}</td>
                 <td>${t.solicitante}</td>
@@ -1194,7 +1190,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Limpar filtros
     function limparFiltros() {
         filtroTag.value = '';
-        filtroFilial.value = '';
+        filtroOrigem.value = '';
+        filtroDestino.value = '';
         filtroProduto.value = '';
         renderTransferList(transferListContainer);
     }
@@ -1790,11 +1787,65 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // --- Sistema de Atualização Automática ---
+    let quantidadeAnterior = 0;
+    
+    async function verificarNovasTransferencias() {
+        try {
+            const response = await apiFetch('/api/transferencias');
+            if (response.ok) {
+                const novasTransferencias = await response.json();
+                
+                // Verificar se há novas transferências
+                if (quantidadeAnterior > 0 && novasTransferencias.length > quantidadeAnterior) {
+                    const diferenca = novasTransferencias.length - quantidadeAnterior;
+                    mostrarNotificacao(`${diferenca} nova(s) transferência(s)!`, 'Nova transferência criada', 'info');
+                    
+                    // Atualizar dados
+                    transferencias = novasTransferencias;
+                    updateDashboard();
+                }
+                
+                quantidadeAnterior = novasTransferencias.length;
+            }
+        } catch (error) {
+            console.error('Erro ao verificar novas transferências:', error);
+        }
+    }
+    
+    function mostrarNotificacao(mensagem, titulo = 'Notificação', tipo = 'info') {
+        // Criar elemento de notificação
+        const notificacao = document.createElement('div');
+        notificacao.className = `notificacao notificacao-${tipo}`;
+        notificacao.innerHTML = `
+            <div class="notificacao-content">
+                <strong>${titulo}</strong>
+                <p>${mensagem}</p>
+            </div>
+        `;
+        
+        document.body.appendChild(notificacao);
+        
+        // Mostrar notificação com animação
+        setTimeout(() => notificacao.classList.add('show'), 100);
+        
+        // Remover após 5 segundos
+        setTimeout(() => {
+            notificacao.classList.remove('show');
+            setTimeout(() => notificacao.remove(), 300);
+        }, 5000);
+    }
+    
+    // Iniciar polling a cada 30 segundos
+    setInterval(verificarNovasTransferencias, 30000);
+
     // --- Inicialização ---
     adicionarItem();
     carregarTags();
     carregarFiliais();
-    carregarTransferencias();
+    carregarTransferencias().then(() => {
+        quantidadeAnterior = transferencias.length;
+    });
     showView('dashboard');
     lucide.createIcons(); // Renderiza todos os ícones iniciais
 });

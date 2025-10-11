@@ -1116,3 +1116,54 @@ i[data-lucide] {
         right: 20px;
     }
 }
+
+/* ========================================
+   SISTEMA DE NOTIFICAÇÕES
+   ======================================== */
+
+.notificacao {
+    position: fixed;
+    top: 20px;
+    right: -400px;
+    width: 350px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    padding: 16px 20px;
+    z-index: 10000;
+    transition: right 0.3s ease;
+    border-left: 4px solid #1e3c72;
+}
+
+.notificacao.show {
+    right: 20px;
+}
+
+.notificacao-info {
+    border-left-color: #17a2b8;
+}
+
+.notificacao-success {
+    border-left-color: #28a745;
+}
+
+.notificacao-warning {
+    border-left-color: #ffc107;
+}
+
+.notificacao-danger {
+    border-left-color: #dc3545;
+}
+
+.notificacao-content strong {
+    display: block;
+    color: #1e3c72;
+    font-size: 16px;
+    margin-bottom: 4px;
+}
+
+.notificacao-content p {
+    color: #6c757d;
+    font-size: 14px;
+    margin: 0;
+}

@@ -558,7 +558,7 @@ app.put('/api/transferencias/:id/etapa', verificarToken, async (req, res) => {
     
     try {
         // Validar status
-        const statusValidos = ['aguardando_separacao', 'em_separacao', 'separado', 'em_transito', 'recebido', 'concluido', 'cancelado'];
+        const statusValidos = ['aguardando_separacao', 'em_separacao', 'separado', 'aguardando_lancamento', 'recebido', 'concluido', 'cancelado'];
         if (!statusValidos.includes(status)) {
             return res.status(400).json({ error: 'Status inválido' });
         }
