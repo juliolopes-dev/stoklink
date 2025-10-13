@@ -315,7 +315,7 @@ document.addEventListener('DOMContentLoaded', function() {
             row.dataset.id = t.id;
             
             const numeroInterno = t.numeroTransferenciaInterna || '-';
-            const dataFormatada = t.data ? new Date(t.data).toLocaleDateString('pt-BR') : '-';
+            const dataFormatada = formatarData(t.data_criacao);
             
             row.innerHTML = `
                 <td><strong>${t.id}</strong></td>
@@ -359,7 +359,7 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('detalhe-origem').textContent = t.origem;
         document.getElementById('detalhe-destino').textContent = t.destino;
         document.getElementById('detalhe-solicitante').textContent = t.solicitante;
-        document.getElementById('detalhe-data').textContent = t.data;
+        document.getElementById('detalhe-data').textContent = formatarData(t.data_criacao);
         const wrapperInterno = document.getElementById('detalhe-interno-wrapper');
         if (t.status === 'concluido') { 
             wrapperInterno.style.display = 'block'; 
@@ -380,7 +380,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const itemDiv = document.createElement('div');
             itemDiv.className = 'detalhe-item-row';
             if (t.status === 'em_separacao') {
-                itemDiv.innerHTML = `<div><strong>Código:</strong> ${item.codigo}</div><div><strong>Qtd. Solicitada:</strong> ${item.solicitada}</div><div class="form-group" style="margin:0;"><label>Qtd. Atendida:</label><input type="number" class="qtd-atendida-input" value="${item.atendida}" min="0" max="${item.solicitada}"></div>`;
+                const valorAtendida = item.atendida > 0 ? item.atendida : '';
+                itemDiv.innerHTML = `<div><strong>Código:</strong> ${item.codigo}</div><div><strong>Qtd. Solicitada:</strong> ${item.solicitada}</div><div class="form-group" style="margin:0;"><label>Qtd. Atendida:</label><input type="number" class="qtd-atendida-input" value="${valorAtendida}" min="0" max="${item.solicitada}" placeholder="0"></div>`;
             } else {
                  itemDiv.innerHTML = `<div><strong>Código:</strong> ${item.codigo}</div><div><strong>Qtd. Solicitada:</strong> ${item.solicitada}</div><div><strong>Qtd. Atendida:</strong> ${item.atendida}</div>`;
             }
@@ -436,28 +437,12 @@ document.addEventListener('DOMContentLoaded', function() {
         } else if (t.status === 'separado') {
             const btn = document.createElement('button');
             btn.className = 'btn btn-primary'; 
-            btn.innerHTML = '<i data-lucide="clipboard-check"></i> Enviar para Lançamento';
+            btn.innerHTML = '<i data-lucide="clipboard-check"></i> Aguardando Lançamento';
             btn.onclick = async () => {
                 await atualizarEtapa(t.id, 'aguardando_lancamento');
                 await showAlert('Transferência enviada para lançamento no sistema!', 'Sucesso', 'success');
             };
             acoesContainer.appendChild(btn);
-        } else if (t.status === 'aguardando_lancamento') {
-            const btnReceber = document.createElement('button');
-            btnReceber.className = 'btn btn-success';
-            btnReceber.innerHTML = '<i data-lucide="check-circle"></i> Confirmar Recebimento';
-            btnReceber.onclick = async () => {
-                const confirmado = await showConfirm(
-                    'Confirma o recebimento dos produtos no destino? Isso finalizará a transferência.',
-                    'Confirmar Recebimento',
-                    'info'
-                );
-                if (confirmado) {
-                    await atualizarEtapa(t.id, 'recebido');
-                    await showAlert('Transferência finalizada com sucesso!', 'Sucesso', 'success');
-                }
-            };
-            acoesContainer.appendChild(btnReceber);
         } else if (t.status === 'recebido') {
             acoesContainer.innerHTML = '<p style="color: #28a745; font-weight: 600;">✅ Transferência finalizada com sucesso!</p>';
         } else if (t.status === 'concluido') {
@@ -548,6 +533,14 @@ document.addEventListener('DOMContentLoaded', function() {
         showView('detalhe');
     }
     // Funções auxiliares para timestamps
+    function formatarData(dataString) {
+        if (!dataString) return '-';
+        // Extrair apenas a parte da data (YYYY-MM-DD) sem considerar timezone
+        const dataISO = dataString.split('T')[0];
+        const [ano, mes, dia] = dataISO.split('-');
+        return `${dia}/${mes}/${ano}`;
+    }
+    
     function formatarDataHora(dataString) {
         if (!dataString) return '-';
         const data = new Date(dataString);
@@ -586,7 +579,7 @@ document.addEventListener('DOMContentLoaded', function() {
             case 'separado': return { text: '✅ Separado', className: 'status-separado' };
             case 'aguardando_lancamento': return { text: '📋 Aguardando Lançamento', className: 'status-aguardando-lancamento' };
             case 'recebido': return { text: '🎉 Finalizado', className: 'status-recebido' };
-            case 'concluido': return { text: '🎉 Concluído', className: 'status-concluido' };
+            case 'concluido': return { text: '⏳ Recebimento Pendente', className: 'status-concluido' };
             case 'cancelado': return { text: '❌ Cancelado', className: 'status-cancelado' };
             // Status antigos (manter compatibilidade)
             case 'pendente': return { text: 'Pendente', className: 'status-pendente' };
@@ -757,8 +750,26 @@ document.addEventListener('DOMContentLoaded', function() {
         editandoRascunhoId = transferId;
         
         // Preencher formulário
-        document.getElementById('origem').value = t.origem;
-        document.getElementById('destino').value = t.destino;
+        const selectOrigem = document.getElementById('origem');
+        const selectDestino = document.getElementById('destino');
+        
+        // Se tem ID de filial, usar ID, senão buscar pelo nome
+        if (t.filial_origem_id) {
+            selectOrigem.value = t.filial_origem_id;
+        } else {
+            // Buscar ID pelo nome (compatibilidade com dados antigos)
+            const optionOrigem = Array.from(selectOrigem.options).find(opt => opt.text === t.origem);
+            if (optionOrigem) selectOrigem.value = optionOrigem.value;
+        }
+        
+        if (t.filial_destino_id) {
+            selectDestino.value = t.filial_destino_id;
+        } else {
+            // Buscar ID pelo nome (compatibilidade com dados antigos)
+            const optionDestino = Array.from(selectDestino.options).find(opt => opt.text === t.destino);
+            if (optionDestino) selectDestino.value = optionDestino.value;
+        }
+        
         document.getElementById('solicitante').value = t.solicitante;
         
         // Carregar tags
@@ -823,9 +834,18 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (editandoRascunhoId) {
                 // Atualizando rascunho existente
+                const selectOrigem = document.getElementById('origem');
+                const selectDestino = document.getElementById('destino');
+                const origemId = selectOrigem.value;
+                const destinoId = selectDestino.value;
+                const origemNome = selectOrigem.options[selectOrigem.selectedIndex]?.text || '';
+                const destinoNome = selectDestino.options[selectDestino.selectedIndex]?.text || '';
+                
                 const transferencia = {
-                    origem: document.getElementById('origem').value,
-                    destino: document.getElementById('destino').value,
+                    origem: origemNome,
+                    destino: destinoNome,
+                    filial_origem_id: origemId ? parseInt(origemId) : null,
+                    filial_destino_id: destinoId ? parseInt(destinoId) : null,
                     solicitante: document.getElementById('solicitante').value,
                     tags: [...currentTransferTags],
                     itens: itens
@@ -837,10 +857,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             } else {
                 // Criando nova transferência
+                const selectOrigem = document.getElementById('origem');
+                const selectDestino = document.getElementById('destino');
+                const origemId = selectOrigem.value;
+                const destinoId = selectDestino.value;
+                const origemNome = selectOrigem.options[selectOrigem.selectedIndex]?.text || '';
+                const destinoNome = selectDestino.options[selectDestino.selectedIndex]?.text || '';
+                
                 const novaTransferencia = {
                     id: generateNewId(),
-                    origem: document.getElementById('origem').value,
-                    destino: document.getElementById('destino').value,
+                    origem: origemNome,
+                    destino: destinoNome,
+                    filial_origem_id: origemId ? parseInt(origemId) : null,
+                    filial_destino_id: destinoId ? parseInt(destinoId) : null,
                     solicitante: document.getElementById('solicitante').value,
                     tags: [...currentTransferTags],
                     data: new Date().toISOString().split('T')[0], 
@@ -1020,13 +1049,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     .filter(f => f.ativo)
                     .forEach(filial => {
                         const optionOrigem = document.createElement('option');
-                        optionOrigem.value = filial.nome;
+                        optionOrigem.value = filial.id;
                         optionOrigem.textContent = filial.nome;
+                        optionOrigem.dataset.nome = filial.nome;
                         selectOrigem.appendChild(optionOrigem);
                         
                         const optionDestino = document.createElement('option');
-                        optionDestino.value = filial.nome;
+                        optionDestino.value = filial.id;
                         optionDestino.textContent = filial.nome;
+                        optionDestino.dataset.nome = filial.nome;
                         selectDestino.appendChild(optionDestino);
                     });
             }
@@ -1162,7 +1193,7 @@ document.addEventListener('DOMContentLoaded', function() {
             row.dataset.id = t.id;
             
             const numeroInterno = t.numeroTransferenciaInterna || '-';
-            const dataFormatada = t.data ? new Date(t.data).toLocaleDateString('pt-BR') : '-';
+            const dataFormatada = formatarData(t.data_criacao);
             
             row.innerHTML = `
                 <td><strong>${t.id}</strong></td>

@@ -240,9 +240,6 @@ app.get('/api/transferencias', verificarToken, async (req, res) => {
                 WHERE tt.transferencia_id = ?
             `, [transf.id]);
             transf.tags = tags.map(t => t.nome);
-
-            // Formatar data
-            transf.data = new Date(transf.data_criacao).toLocaleDateString('pt-BR');
             transf.numeroTransferenciaInterna = transf.numero_transferencia_interna;
         }
 
@@ -279,8 +276,6 @@ app.get('/api/transferencias/:id', verificarToken, async (req, res) => {
             WHERE tt.transferencia_id = ?
         `, [transf.id]);
         transf.tags = tags.map(t => t.nome);
-
-        transf.data = new Date(transf.data_criacao).toLocaleDateString('pt-BR');
         transf.numeroTransferenciaInterna = transf.numero_transferencia_interna;
 
         res.json(transf);
@@ -335,7 +330,7 @@ app.get('/api/verificar-produto/:codigo/:destino', verificarToken, async (req, r
 
 // POST - Criar nova transferência
 app.post('/api/transferencias', verificarToken, async (req, res) => {
-    const { id, origem, destino, solicitante, data, status, tags, itens } = req.body;
+    const { id, origem, destino, filial_origem_id, filial_destino_id, solicitante, data, status, tags, itens } = req.body;
     const empresa_id = req.usuario.empresa_id;
     const usuario_id = req.usuario.id;
     
@@ -346,8 +341,8 @@ app.post('/api/transferencias', verificarToken, async (req, res) => {
 
         // Inserir transferência
         await connection.query(
-            'INSERT INTO transferencias (id, empresa_id, usuario_id, origem, destino, solicitante, data_criacao, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [id, empresa_id, usuario_id, origem, destino, solicitante, data, status || 'pendente']
+            'INSERT INTO transferencias (id, empresa_id, usuario_id, origem, destino, filial_origem_id, filial_destino_id, solicitante, data_criacao, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, empresa_id, usuario_id, origem, destino, filial_origem_id, filial_destino_id, solicitante, data, status || 'pendente']
         );
 
         // Inserir itens
@@ -401,7 +396,7 @@ app.post('/api/transferencias', verificarToken, async (req, res) => {
 
 // PUT - Atualizar rascunho
 app.put('/api/transferencias/:id', verificarToken, async (req, res) => {
-    const { origem, destino, solicitante, tags, itens } = req.body;
+    const { origem, destino, filial_origem_id, filial_destino_id, solicitante, tags, itens } = req.body;
     const id = req.params.id;
     
     const connection = await db.getConnection();
@@ -427,8 +422,8 @@ app.put('/api/transferencias/:id', verificarToken, async (req, res) => {
         
         // Atualizar transferência
         await connection.query(
-            'UPDATE transferencias SET origem = ?, destino = ?, solicitante = ? WHERE id = ?',
-            [origem, destino, solicitante, id]
+            'UPDATE transferencias SET origem = ?, destino = ?, filial_origem_id = ?, filial_destino_id = ?, solicitante = ? WHERE id = ?',
+            [origem, destino, filial_origem_id, filial_destino_id, solicitante, id]
         );
         
         // Remover itens antigos
