@@ -430,8 +430,8 @@ document.addEventListener('DOMContentLoaded', function() {
             btn.className = 'btn btn-success'; 
             btn.innerHTML = '<i data-lucide="package-check"></i> Finalizar Separação';
             btn.onclick = async () => {
-                await atualizarEtapa(t.id, 'separado');
-                await showAlert('Produtos separados com sucesso!', 'Sucesso', 'success');
+                await atualizarEtapa(t.id, 'aguardando_lancamento');
+                await showAlert('Separação finalizada! Aguardando lançamento no sistema.', 'Sucesso', 'success');
             };
             acoesContainer.appendChild(btn);
         } else if (t.status === 'separado') {
