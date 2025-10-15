@@ -363,6 +363,11 @@
                 console.log('📦 Dados:', data);
 
                 if (response.ok) {
+                    console.log('=== DEBUG LOGIN FRONTEND ===');
+                    console.log('Usuário retornado:', data.usuario);
+                    console.log('Filial no usuário:', data.usuario.filial);
+                    console.log('===========================');
+                    
                     // Salvar token e dados do usuário
                     localStorage.setItem('stoklink_token', data.token);
                     localStorage.setItem('stoklink_user', JSON.stringify(data.usuario));

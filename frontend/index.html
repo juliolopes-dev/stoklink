@@ -69,7 +69,14 @@
                     </div>
                 </div>
                 <div class="card">
-                    <div class="card-header" style="justify-content: space-between;"><span><i data-lucide="boxes"></i>Itens da Transferência</span><button type="button" class="btn btn-primary" id="btn-add-item"><i data-lucide="plus"></i> Adicionar Item</button></div>
+                    <div class="card-header" style="justify-content: space-between;">
+                        <span><i data-lucide="boxes"></i>Itens da Transferência</span>
+                        <div style="display: flex; gap: 10px;">
+                            <button type="button" class="btn btn-secondary" id="btn-importar-xlsx"><i data-lucide="upload"></i> Importar XLSX</button>
+                            <button type="button" class="btn btn-primary" id="btn-add-item"><i data-lucide="plus"></i> Adicionar Item</button>
+                        </div>
+                    </div>
+                    <input type="file" id="file-input-xlsx" accept=".xlsx,.xls" style="display: none;">
                     <div id="itens-container"></div>
                 </div>
                 <div class="actions-footer">
@@ -246,6 +253,9 @@
         </div>
     </div>
 
+    <!-- Biblioteca para ler arquivos Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    
     <!-- Script JavaScript -->
     <script src="app.js"></script>
 </body>

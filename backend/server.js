@@ -37,9 +37,10 @@ app.post('/api/auth/login', async (req, res) => {
     
     try {
         const [usuarios] = await db.query(`
-            SELECT u.*, e.nome as empresa_nome, u.filial 
+            SELECT u.*, e.nome as empresa_nome, f.nome as filial 
             FROM usuarios u
             INNER JOIN empresas e ON u.empresa_id = e.id
+            LEFT JOIN filiais f ON u.filial_id = f.id
             WHERE u.email = ? AND u.ativo = TRUE AND e.ativo = TRUE
         `, [email]);
 
@@ -48,6 +49,13 @@ app.post('/api/auth/login', async (req, res) => {
         }
 
         const usuario = usuarios[0];
+        
+        // Debug: verificar dados do usuário
+        console.log('=== DEBUG LOGIN ===');
+        console.log('Email:', email);
+        console.log('Filial ID no banco:', usuario.filial_id);
+        console.log('Filial nome retornada:', usuario.filial);
+        console.log('==================');
         
         // Verificar senha com bcrypt
         const senhaValida = await bcrypt.compare(senha, usuario.senha);

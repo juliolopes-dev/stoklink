@@ -922,6 +922,121 @@ document.addEventListener('DOMContentLoaded', function() {
         showView(previousView); 
     });
     btnAddItem.addEventListener('click', adicionarItem);
+    
+    // Importar XLSX
+    const btnImportarXlsx = document.getElementById('btn-importar-xlsx');
+    const fileInputXlsx = document.getElementById('file-input-xlsx');
+    
+    btnImportarXlsx.addEventListener('click', () => {
+        fileInputXlsx.click();
+    });
+    
+    fileInputXlsx.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        try {
+            const data = await file.arrayBuffer();
+            const workbook = XLSX.read(data);
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            
+            // Ler todos os dados como array (sem usar primeira linha como cabeçalho)
+            const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            
+            // Encontrar a linha do cabeçalho (que contém "Cód. Interno" e "Qtde")
+            let headerRowIndex = -1;
+            let codInternoColIndex = -1;
+            let qtdeSeparadaColIndex = -1;
+            
+            for (let i = 0; i < rawData.length; i++) {
+                const row = rawData[i];
+                for (let j = 0; j < row.length; j++) {
+                    const cell = String(row[j] || '').toLowerCase();
+                    if (cell.includes('cód') && cell.includes('interno')) {
+                        headerRowIndex = i;
+                        codInternoColIndex = j;
+                    }
+                    if (cell.includes('qtde') && cell.includes('separada')) {
+                        qtdeSeparadaColIndex = j;
+                    }
+                }
+                if (headerRowIndex >= 0 && codInternoColIndex >= 0 && qtdeSeparadaColIndex >= 0) {
+                    break;
+                }
+            }
+            
+            console.log('=== DEBUG IMPORTAÇÃO XLSX ===');
+            console.log('Linha do cabeçalho:', headerRowIndex);
+            console.log('Coluna Cód. Interno:', codInternoColIndex);
+            console.log('Coluna Qtde. Separada:', qtdeSeparadaColIndex);
+            
+            if (headerRowIndex < 0 || codInternoColIndex < 0 || qtdeSeparadaColIndex < 0) {
+                await showAlert('Não foi possível encontrar as colunas "Cód. Interno" e "Qtde. Separada" na planilha.', 'Erro', 'danger');
+                fileInputXlsx.value = '';
+                return;
+            }
+            
+            // Converter para JSON usando o cabeçalho correto
+            const jsonData = [];
+            for (let i = headerRowIndex + 1; i < rawData.length; i++) {
+                const row = rawData[i];
+                if (row && row.length > 0) {
+                    jsonData.push({
+                        codInterno: row[codInternoColIndex],
+                        qtdeSeparada: row[qtdeSeparadaColIndex]
+                    });
+                }
+            }
+            
+            // Limpar itens existentes
+            itensContainer.innerHTML = '';
+            
+            // Processar cada linha da planilha
+            let itensImportados = 0;
+            
+            console.log('Total de linhas a processar:', jsonData.length);
+            
+            for (const row of jsonData) {
+                const codInterno = row.codInterno ? String(row.codInterno).trim() : null;
+                const qtdeSeparada = row.qtdeSeparada ? Number(row.qtdeSeparada) : 0;
+                
+                console.log('Processando linha:', { codInterno, qtdeSeparada });
+                
+                if (codInterno && qtdeSeparada > 0) {
+                    const itemRow = document.createElement('div');
+                    itemRow.className = 'item-row';
+                    itemRow.innerHTML = `<div class="form-group"><label>Código do Produto *</label><input type="text" class="item-codigo" required placeholder="Código do produto" value="${codInterno}"></div><div class="form-group"><label>Qtd. Solicitada *</label><input type="number" class="item-quantidade" required min="1" placeholder="Ex: 10" value="${qtdeSeparada}"></div><button type="button" class="btn-remover-item"><i data-lucide="trash-2"></i></button>`;
+                    itensContainer.appendChild(itemRow);
+                    
+                    itemRow.querySelector('.btn-remover-item').addEventListener('click', () => {
+                        itemRow.remove();
+                    });
+                    
+                    itensImportados++;
+                }
+            }
+            
+            console.log('Total de itens importados:', itensImportados);
+            console.log('=== FIM DEBUG ===');
+            
+            lucide.createIcons();
+            
+            if (itensImportados > 0) {
+                await showAlert(`${itensImportados} itens importados com sucesso!`, 'Sucesso', 'success');
+            } else {
+                await showAlert('Nenhum item válido encontrado na planilha. Verifique as colunas "Cód. Interno" e "Qtde. Separada".', 'Aviso', 'warning');
+            }
+            
+        } catch (error) {
+            console.error('Erro ao ler arquivo:', error);
+            await showAlert('Erro ao processar arquivo XLSX. Verifique o formato.', 'Erro', 'danger');
+        }
+        
+        // Limpar input
+        fileInputXlsx.value = '';
+    });
+    
     btnAddTag.addEventListener('click', () => {
         const newTag = tagInput.value.trim();
         if (newTag && !currentTransferTags.includes(newTag)) {
