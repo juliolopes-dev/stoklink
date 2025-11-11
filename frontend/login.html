@@ -369,8 +369,8 @@
                     console.log('===========================');
                     
                     // Salvar token e dados do usuário
-                    localStorage.setItem('stoklink_token', data.token);
-                    localStorage.setItem('stoklink_user', JSON.stringify(data.usuario));
+                    sessionStorage.setItem('stoklink_token', data.token);
+                    sessionStorage.setItem('stoklink_user', JSON.stringify(data.usuario));
                     
                     // Redirecionar para dashboard
                     window.location.href = 'index.html';

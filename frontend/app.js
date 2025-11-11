@@ -18,7 +18,7 @@ console.log('📍 Hostname:', window.location.hostname);
 
 // Função auxiliar para fazer requisições autenticadas
 async function apiFetch(endpoint, options = {}) {
-    const token = localStorage.getItem('stoklink_token');
+    const token = sessionStorage.getItem('stoklink_token');
     
     const headers = {
         'Content-Type': 'application/json',
@@ -37,8 +37,8 @@ async function apiFetch(endpoint, options = {}) {
         
         // Se token expirou ou inválido, fazer logout
         if (response.status === 401) {
-            localStorage.removeItem('stoklink_token');
-            localStorage.removeItem('stoklink_user');
+            sessionStorage.removeItem('stoklink_token');
+            sessionStorage.removeItem('stoklink_user');
             window.location.href = 'login.html';
             throw new Error('Sessão expirada');
         }
@@ -152,8 +152,8 @@ function showConfirm(message, title = 'Confirmação', type = 'warning') {
 
 document.addEventListener('DOMContentLoaded', async function() {
     // --- Verificar Autenticação ---
-    const token = localStorage.getItem('stoklink_token');
-    let usuario = JSON.parse(localStorage.getItem('stoklink_user') || '{}');
+    const token = sessionStorage.getItem('stoklink_token');
+    let usuario = JSON.parse(sessionStorage.getItem('stoklink_user') || '{}');
     
     if (!token) {
         window.location.href = 'login.html';
@@ -174,7 +174,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                     ...dados,
                     empresa: dados.empresa
                 };
-                localStorage.setItem('stoklink_user', JSON.stringify(usuario));
+                sessionStorage.setItem('stoklink_user', JSON.stringify(usuario));
             }
         } catch (error) {
             console.error('Erro ao sincronizar usuário:', error);
@@ -1357,8 +1357,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         );
         
         if (confirmado) {
-            localStorage.removeItem('stoklink_token');
-            localStorage.removeItem('stoklink_user');
+            sessionStorage.removeItem('stoklink_token');
+            sessionStorage.removeItem('stoklink_user');
             window.location.href = 'login.html';
         }
     });

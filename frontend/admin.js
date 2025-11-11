@@ -12,7 +12,7 @@ const API_URL = isLocal ? 'http://localhost:3001' : window.location.origin;
 
 // Função auxiliar para fazer requisições autenticadas
 async function apiFetch(endpoint, options = {}) {
-    const token = localStorage.getItem('stoklink_token');
+    const token = sessionStorage.getItem('stoklink_token');
     
     const headers = {
         'Content-Type': 'application/json',
@@ -31,8 +31,8 @@ async function apiFetch(endpoint, options = {}) {
         
         // Se token expirou ou inválido, fazer logout
         if (response.status === 401) {
-            localStorage.removeItem('stoklink_token');
-            localStorage.removeItem('stoklink_user');
+            sessionStorage.removeItem('stoklink_token');
+            sessionStorage.removeItem('stoklink_user');
             window.location.href = 'login.html';
             throw new Error('Sessão expirada');
         }
@@ -138,8 +138,8 @@ function showConfirm(message, title = 'Confirmação', type = 'warning') {
 
 document.addEventListener('DOMContentLoaded', function() {
     // Verificar Autenticação
-    const token = localStorage.getItem('stoklink_token');
-    const usuario = JSON.parse(localStorage.getItem('stoklink_user') || '{}');
+    const token = sessionStorage.getItem('stoklink_token');
+    const usuario = JSON.parse(sessionStorage.getItem('stoklink_user') || '{}');
     
     if (!token || usuario.role !== 'admin') {
         window.location.href = 'index.html';
@@ -760,8 +760,8 @@ document.addEventListener('DOMContentLoaded', function() {
         );
         
         if (confirmado) {
-            localStorage.removeItem('stoklink_token');
-            localStorage.removeItem('stoklink_user');
+            sessionStorage.removeItem('stoklink_token');
+            sessionStorage.removeItem('stoklink_user');
             window.location.href = 'login.html';
         }
     });
