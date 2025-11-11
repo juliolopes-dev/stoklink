@@ -150,14 +150,35 @@ function showConfirm(message, title = 'Confirmação', type = 'warning') {
 // CÓDIGO PRINCIPAL
 // ====================================
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     // --- Verificar Autenticação ---
     const token = localStorage.getItem('stoklink_token');
-    const usuario = JSON.parse(localStorage.getItem('stoklink_user') || '{}');
+    let usuario = JSON.parse(localStorage.getItem('stoklink_user') || '{}');
     
     if (!token) {
         window.location.href = 'login.html';
         return;
+    }
+
+    if (!usuario.filial_id) {
+        await sincronizarUsuario();
+    }
+
+    async function sincronizarUsuario() {
+        try {
+            const response = await apiFetch('/api/auth/me');
+            if (response.ok) {
+                const dados = await response.json();
+                usuario = {
+                    ...usuario,
+                    ...dados,
+                    empresa: dados.empresa
+                };
+                localStorage.setItem('stoklink_user', JSON.stringify(usuario));
+            }
+        } catch (error) {
+            console.error('Erro ao sincronizar usuário:', error);
+        }
     }
 
     // Exibir nome do usuário logado
@@ -201,11 +222,24 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- Armazenamento de Dados ---
     let transferencias = [];
+    let transferenciasCarregadas = false;
     let nextId = 1;
     let previousView = 'dashboard';
     let globalTags = ['Urgente', 'Retirar no local', 'Frágil', 'Cliente VIP'];
     let currentTransferTags = [];
     let editandoRascunhoId = null; // ID do rascunho sendo editado
+    let transferenciaEmDetalhe = null;
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingText = document.getElementById('loading-text');
+
+    function showLoading(text = 'Processando...') {
+        if (loadingText) loadingText.textContent = text;
+        if (loadingOverlay) loadingOverlay.classList.add('show');
+    }
+
+    function hideLoading() {
+        if (loadingOverlay) loadingOverlay.classList.remove('show');
+    }
 
     // --- Funções Auxiliares ---
     const formatDate = (date) => new Intl.DateTimeFormat('pt-BR').format(date);
@@ -234,6 +268,15 @@ document.addEventListener('DOMContentLoaded', function() {
         views[viewName].style.display = 'block';
         Object.values(navButtons).forEach(btn => btn.classList.remove('active'));
         if(navButtons[viewName]) navButtons[viewName].classList.add('active');
+        
+        if (viewName !== 'detalhe') {
+            transferenciaEmDetalhe = null;
+        }
+        const exportButton = document.getElementById('btn-exportar-transferencia');
+        if (exportButton) {
+            exportButton.style.display = viewName === 'detalhe' && transferenciaEmDetalhe ? 'flex' : 'none';
+        }
+
         lucide.createIcons();
     }
 
@@ -352,8 +395,26 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     function showDetalhes(transferId) {
         const t = transferencias.find(transf => transf.id === transferId); 
-        if (!t) return;
+        if (!t) {
+            const exportButton = document.getElementById('btn-exportar-transferencia');
+            if (exportButton) {
+                exportButton.style.display = 'none';
+                exportButton.onclick = null;
+            }
+            return;
+        }
+        transferenciaEmDetalhe = t;
+        const exportButton = document.getElementById('btn-exportar-transferencia');
+        if (exportButton) {
+            exportButton.style.display = 'flex';
+            exportButton.onclick = () => exportarTransferencia(t);
+        }
         const statusInfo = getStatusInfo(t.status);
+        const usuarioFilialId = usuario?.filial_id ? parseInt(usuario.filial_id, 10) : null;
+        const podeEditarTransferencia = Boolean(
+            usuarioFilialId &&
+            (usuarioFilialId === t.filial_origem_id || usuarioFilialId === t.filial_destino_id)
+        );
         document.getElementById('detalhe-id').textContent = t.id;
         document.getElementById('detalhe-status-tag').innerHTML = `<span class="status-tag ${statusInfo.className}">${statusInfo.text}</span>`;
         document.getElementById('detalhe-origem').textContent = t.origem;
@@ -376,112 +437,139 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         const itensLista = document.getElementById('detalhe-itens-lista');
         itensLista.innerHTML = '';
+        const hasAtendida = t.itens.some(item => typeof item.atendida !== 'undefined' && item.atendida !== null);
+        const colunaAtendida = document.getElementById('detalhe-coluna-atendida');
+        if (colunaAtendida) {
+            colunaAtendida.style.display = (t.status === 'em_separacao' && podeEditarTransferencia) || hasAtendida ? 'block' : 'none';
+        }
+
+        const totalItens = document.getElementById('detalhe-total-itens');
+        if (totalItens) {
+            totalItens.textContent = `${t.itens.length} item${t.itens.length === 1 ? '' : 's'}`;
+        }
+
         t.itens.forEach(item => {
             const itemDiv = document.createElement('div');
             itemDiv.className = 'detalhe-item-row';
-            if (t.status === 'em_separacao') {
+            const podeEditarItem = t.status === 'em_separacao' && podeEditarTransferencia;
+            if (podeEditarItem) {
                 const valorAtendida = item.atendida > 0 ? item.atendida : '';
-                itemDiv.innerHTML = `<div><strong>Código:</strong> ${item.codigo}</div><div><strong>Qtd. Solicitada:</strong> ${item.solicitada}</div><div class="form-group" style="margin:0;"><label>Qtd. Atendida:</label><input type="number" class="qtd-atendida-input" value="${valorAtendida}" min="0" max="${item.solicitada}" placeholder="0"></div>`;
+                itemDiv.innerHTML = `
+                    <div><strong>Código:</strong> ${item.codigo}</div>
+                    <div><strong>Qtd. Solicitada:</strong> ${item.solicitada}</div>
+                    <div class="form-group" style="margin:0;">
+                        <label>Qtd. Atendida:</label>
+                        <input type="number" class="qtd-atendida-input" value="${valorAtendida}" min="0" max="${item.solicitada}" placeholder="0">
+                    </div>`;
             } else {
-                 itemDiv.innerHTML = `<div><strong>Código:</strong> ${item.codigo}</div><div><strong>Qtd. Solicitada:</strong> ${item.solicitada}</div><div><strong>Qtd. Atendida:</strong> ${item.atendida}</div>`;
+                 itemDiv.innerHTML = `
+                    <div><strong>Código:</strong> ${item.codigo}</div>
+                    <div><strong>Qtd. Solicitada:</strong> ${item.solicitada}</div>
+                    <div><strong>Qtd. Atendida:</strong> ${item.atendida ?? '-'}</div>`;
             }
             itensLista.appendChild(itemDiv);
         });
         const acoesContainer = document.getElementById('detalhe-acoes');
         acoesContainer.innerHTML = '';
+        const statusComAcao = ['aguardando_separacao', 'em_separacao', 'separado', 'aguardando_lancamento'];
+        const precisaPermissao = statusComAcao.includes(t.status) || (t.status === 'concluido' && !t.data_recebimento);
         
-        // Novos status com workflow
-        if (t.status === 'rascunho') {
-            const btnEditar = document.createElement('button');
-            btnEditar.className = 'btn btn-secondary'; 
-            btnEditar.innerHTML = '<i data-lucide="edit"></i> Editar Rascunho';
-            btnEditar.onclick = () => {
-                editarRascunho(t.id);
-            };
-            acoesContainer.appendChild(btnEditar);
-            
-            const btnEnviar = document.createElement('button');
-            btnEnviar.className = 'btn btn-primary'; 
-            btnEnviar.innerHTML = '<i data-lucide="send"></i> Enviar Solicitação';
-            btnEnviar.style.marginLeft = '10px';
-            btnEnviar.onclick = async () => {
-                const confirmado = await showConfirm(
-                    'Deseja enviar esta solicitação de transferência?',
-                    'Confirmar Envio',
-                    'info'
-                );
-                if (confirmado) {
-                    await atualizarEtapa(t.id, 'aguardando_separacao');
-                    await showAlert('Solicitação enviada! Aguardando separação.', 'Sucesso', 'success');
-                }
-            };
-            acoesContainer.appendChild(btnEnviar);
-        } else if (t.status === 'aguardando_separacao') {
-            const btn = document.createElement('button');
-            btn.className = 'btn btn-info'; 
-            btn.innerHTML = '<i data-lucide="play"></i> Iniciar Separação';
-            btn.onclick = async () => {
-                await atualizarEtapa(t.id, 'em_separacao');
-                await showAlert('Separação iniciada!', 'Sucesso', 'success');
-            };
-            acoesContainer.appendChild(btn);
-        } else if (t.status === 'em_separacao') {
-            const btn = document.createElement('button');
-            btn.className = 'btn btn-success'; 
-            btn.innerHTML = '<i data-lucide="package-check"></i> Finalizar Separação';
-            btn.onclick = async () => {
-                await atualizarEtapa(t.id, 'aguardando_lancamento');
-                await showAlert('Separação finalizada! Aguardando lançamento no sistema.', 'Sucesso', 'success');
-            };
-            acoesContainer.appendChild(btn);
-        } else if (t.status === 'separado') {
-            const btn = document.createElement('button');
-            btn.className = 'btn btn-primary'; 
-            btn.innerHTML = '<i data-lucide="clipboard-check"></i> Aguardando Lançamento';
-            btn.onclick = async () => {
-                await atualizarEtapa(t.id, 'aguardando_lancamento');
-                await showAlert('Transferência enviada para lançamento no sistema!', 'Sucesso', 'success');
-            };
-            acoesContainer.appendChild(btn);
-        } else if (t.status === 'recebido') {
-            acoesContainer.innerHTML = '<p style="color: #28a745; font-weight: 600;">✅ Transferência finalizada com sucesso!</p>';
-        } else if (t.status === 'concluido') {
-            // Verificar se tem data de recebimento (transferência nova) ou não (transferência antiga)
-            if (!t.data_recebimento) {
-                // Transferência antiga - permitir adicionar recebimento
-                const btnReceber = document.createElement('button');
-                btnReceber.className = 'btn btn-success';
-                btnReceber.innerHTML = '<i data-lucide="check-circle"></i> Marcar como Recebido';
-                btnReceber.onclick = async () => {
+        if (precisaPermissao && !podeEditarTransferencia) {
+            acoesContainer.innerHTML = '<p class="acoes-alerta">Apenas as filiais de origem ou destino podem alterar o status desta transferência.</p>';
+        } else {
+            // Novos status com workflow
+            if (t.status === 'rascunho') {
+                const btnEditar = document.createElement('button');
+                btnEditar.className = 'btn btn-secondary'; 
+                btnEditar.innerHTML = '<i data-lucide="edit"></i> Editar Rascunho';
+                btnEditar.onclick = () => {
+                    editarRascunho(t.id);
+                };
+                acoesContainer.appendChild(btnEditar);
+                
+                const btnEnviar = document.createElement('button');
+                btnEnviar.className = 'btn btn-primary'; 
+                btnEnviar.innerHTML = '<i data-lucide="send"></i> Enviar Solicitação';
+                btnEnviar.style.marginLeft = '10px';
+                btnEnviar.onclick = async () => {
                     const confirmado = await showConfirm(
-                        'Deseja registrar o recebimento desta transferência?',
-                        'Confirmar Recebimento',
+                        'Deseja enviar esta solicitação de transferência?',
+                        'Confirmar Envio',
                         'info'
                     );
                     if (confirmado) {
-                        await atualizarEtapa(t.id, 'recebido');
-                        await showAlert('Recebimento registrado com sucesso!', 'Sucesso', 'success');
+                        await atualizarEtapa(t.id, 'aguardando_separacao');
+                        await showAlert('Solicitação enviada! Aguardando separação.', 'Sucesso', 'success');
                     }
                 };
-                acoesContainer.appendChild(btnReceber);
-            } else {
-                acoesContainer.innerHTML = '<p style="color: #28a745; font-weight: 600;">✅ Transferência concluída com sucesso!</p>';
-            } 
-        } else if (t.status === 'cancelado') {
-            acoesContainer.innerHTML = '<p style="color: #dc3545; font-weight: 600;">❌ Transferência cancelada.</p>'; 
-        } else if (t.status === 'pendente') {
-            // Compatibilidade com status antigo
-            const btn = document.createElement('button');
-            btn.className = 'btn btn-info'; 
-            btn.innerHTML = '<i data-lucide="play"></i> Iniciar Separação';
-            btn.onclick = () => mudarStatus(t.id, 'em_separacao');
-            acoesContainer.appendChild(btn);
-        } else if (t.status === 'aguardando_lancamento') {
-            // Compatibilidade com status antigo
-            acoesContainer.innerHTML = `<div class="form-group"><label for="input-transf-interna">Nº da Transferência (Sistema Principal) *</label><input type="text" id="input-transf-interna" placeholder="Digite o número da transferência"></div><button class="btn btn-primary" id="btn-lancar-transferencia"><i data-lucide="send"></i> Lançamento Concluído</button>`;
-            acoesContainer.querySelector('#btn-lancar-transferencia').onclick = () => lancarTransferencia(t.id);
-        } else { 
-            acoesContainer.innerHTML = '<p>Status desconhecido.</p>'; 
+                acoesContainer.appendChild(btnEnviar);
+            } else if (t.status === 'aguardando_separacao') {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-info'; 
+                btn.innerHTML = '<i data-lucide="play"></i> Iniciar Separação';
+                btn.onclick = async () => {
+                    await atualizarEtapa(t.id, 'em_separacao');
+                    await showAlert('Separação iniciada!', 'Sucesso', 'success');
+                };
+                acoesContainer.appendChild(btn);
+            } else if (t.status === 'em_separacao') {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-success'; 
+                btn.innerHTML = '<i data-lucide="package-check"></i> Finalizar Separação';
+                btn.onclick = async () => {
+                    await atualizarEtapa(t.id, 'aguardando_lancamento');
+                    await showAlert('Separação finalizada! Aguardando lançamento no sistema.', 'Sucesso', 'success');
+                };
+                acoesContainer.appendChild(btn);
+            } else if (t.status === 'separado') {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-primary'; 
+                btn.innerHTML = '<i data-lucide="clipboard-check"></i> Aguardando Lançamento';
+                btn.onclick = async () => {
+                    await atualizarEtapa(t.id, 'aguardando_lancamento');
+                    await showAlert('Transferência enviada para lançamento no sistema!', 'Sucesso', 'success');
+                };
+                acoesContainer.appendChild(btn);
+            } else if (t.status === 'recebido') {
+                acoesContainer.innerHTML = '<p style="color: #28a745; font-weight: 600;">✅ Transferência finalizada com sucesso!</p>';
+            } else if (t.status === 'concluido') {
+                // Verificar se tem data de recebimento (transferência nova) ou não (transferência antiga)
+                if (!t.data_recebimento) {
+                    // Transferência antiga - permitir adicionar recebimento
+                    const btnReceber = document.createElement('button');
+                    btnReceber.className = 'btn btn-success';
+                    btnReceber.innerHTML = '<i data-lucide="check-circle"></i> Marcar como Recebido';
+                    btnReceber.onclick = async () => {
+                        const confirmado = await showConfirm(
+                            'Deseja registrar o recebimento desta transferência?',
+                            'Confirmar Recebimento',
+                            'info'
+                        );
+                        if (confirmado) {
+                            await atualizarEtapa(t.id, 'recebido');
+                            await showAlert('Recebimento registrado com sucesso!', 'Sucesso', 'success');
+                        }
+                    };
+                    acoesContainer.appendChild(btnReceber);
+                } else {
+                    acoesContainer.innerHTML = '<p style="color: #28a745; font-weight: 600;">✅ Transferência concluída com sucesso!</p>';
+                } 
+            } else if (t.status === 'cancelado') {
+                acoesContainer.innerHTML = '<p style="color: #dc3545; font-weight: 600;">❌ Transferência cancelada.</p>'; 
+            } else if (t.status === 'pendente') {
+                // Compatibilidade com status antigo
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-info'; 
+                btn.innerHTML = '<i data-lucide="play"></i> Iniciar Separação';
+                btn.onclick = () => mudarStatus(t.id, 'em_separacao');
+                acoesContainer.appendChild(btn);
+            } else if (t.status === 'aguardando_lancamento') {
+                // Compatibilidade com status antigo
+                acoesContainer.innerHTML = `<div class="form-group"><label for="input-transf-interna">Nº da Transferência (Sistema Principal) *</label><input type="text" id="input-transf-interna" placeholder="Digite o número da transferência"></div><button class="btn btn-primary" id="btn-lancar-transferencia"><i data-lucide="send"></i> Lançamento Concluído</button>`;
+                acoesContainer.querySelector('#btn-lancar-transferencia').onclick = () => lancarTransferencia(t.id);
+            } else { 
+                acoesContainer.innerHTML = '<p>Status desconhecido.</p>'; 
+            }
         }
         
         // Mostrar timestamps se existirem
@@ -569,6 +657,38 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         return `${horas}h ${minutos}min`;
+    }
+
+    function exportarTransferencia(transferencia) {
+        if (!transferencia || !Array.isArray(transferencia.itens) || transferencia.itens.length === 0) {
+            showAlert('Não há itens para exportar nesta transferência.', 'Aviso', 'warning');
+            return;
+        }
+
+        const destino = transferencia.destino || '-';
+        const rows = [['Codigo', 'Quantidade', 'FilialDestino']];
+
+        transferencia.itens.forEach(item => {
+            const codigo = item.codigo || '';
+            const quantidade = item.solicitada ?? item.quantidade ?? item.quantidade_solicitada ?? 0;
+            rows.push([codigo, quantidade, destino]);
+        });
+
+        const csvContent = rows
+            .map(cols => cols.map(value => `"${String(value ?? '').replace(/"/g, '""')}"`).join(';'))
+            .join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const fileName = `${transferencia.id || 'transferencia'}-itens.csv`;
+
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     }
     
     const getStatusInfo = (status) => {
@@ -699,7 +819,17 @@ document.addEventListener('DOMContentLoaded', function() {
     function adicionarItem() {
         const itemRow = document.createElement('div');
         itemRow.className = 'item-row';
-        itemRow.innerHTML = `<div class="form-group"><label>Código do Produto *</label><input type="text" class="item-codigo" required placeholder="Código do produto"></div><div class="form-group"><label>Qtd. Solicitada *</label><input type="number" class="item-quantidade" required min="1" placeholder="Ex: 10"></div><button type="button" class="btn-remover-item"><i data-lucide="trash-2"></i></button>`;
+        itemRow.innerHTML = `
+            <div class="form-group">
+                <input type="text" class="item-codigo" required placeholder="Código do produto">
+            </div>
+            <div class="form-group">
+                <input type="number" class="item-quantidade" required min="1" placeholder="Ex: 10">
+            </div>
+            <button type="button" class="btn-remover-item" aria-label="Remover item">
+                <i data-lucide="trash-2"></i>
+            </button>
+        `;
         
         // Adicionar validação de produto duplicado
         const codigoInput = itemRow.querySelector('.item-codigo');
@@ -785,14 +915,12 @@ document.addEventListener('DOMContentLoaded', function() {
             itemRow.className = 'item-row';
             itemRow.innerHTML = `
                 <div class="form-group">
-                    <label>Código do Produto *</label>
                     <input type="text" class="item-codigo" required placeholder="Código do produto" value="${item.codigo}">
                 </div>
                 <div class="form-group">
-                    <label>Qtd. Solicitada *</label>
                     <input type="number" class="item-quantidade" required min="1" placeholder="Ex: 10" value="${item.solicitada}">
                 </div>
-                <button type="button" class="btn-remover-item">
+                <button type="button" class="btn-remover-item" aria-label="Remover item">
                     <i data-lucide="trash-2"></i>
                 </button>
             `;
@@ -810,9 +938,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     async function salvarRascunho(comoRascunho = true) {
+        showLoading(comoRascunho ? 'Salvando rascunho...' : 'Enviando solicitação...');
         const itens = [];
         const itemRows = itensContainer.querySelectorAll('.item-row');
         if(itemRows.length === 0) { 
+            hideLoading();
             await showAlert(
                 'Adicione pelo menos um item para salvar.',
                 'Item Obrigatório',
@@ -891,6 +1021,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 adicionarItem();
                 
                 const mensagem = editandoRascunhoId ? 'Rascunho atualizado com sucesso!' : 'Transferência salva com sucesso!';
+                hideLoading();
                 await showAlert(mensagem, 'Sucesso', 'success');
                 
                 editandoRascunhoId = null;
@@ -901,13 +1032,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 return true;
             } else {
                 const error = await response.json();
+                hideLoading();
                 await showAlert(error.error || 'Erro ao salvar transferência', 'Erro', 'danger');
                 return false;
             }
         } catch (error) {
             console.error('Erro ao salvar transferência:', error);
+            hideLoading();
             await showAlert('Erro de conexão com o servidor', 'Erro', 'danger');
             return false;
+        } finally {
+            hideLoading();
         }
     }
 
@@ -915,8 +1050,8 @@ document.addEventListener('DOMContentLoaded', function() {
     navButtons.dashboard.addEventListener('click', () => showView('dashboard'));
     navButtons.cadastro.addEventListener('click', () => showView('cadastro'));
     navButtons.visualizacao.addEventListener('click', () => { 
-        renderTransferList(transferListContainer); 
         showView('visualizacao'); 
+        aplicarFiltros();
     });
     btnVoltarLista.addEventListener('click', () => { 
         showView(previousView); 
@@ -1008,7 +1143,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (produto && quantidadeSugerida > 0) {
                     const itemRow = document.createElement('div');
                     itemRow.className = 'item-row';
-                    itemRow.innerHTML = `<div class="form-group"><label>Código do Produto *</label><input type="text" class="item-codigo" required placeholder="Código do produto" value="${produto}"></div><div class="form-group"><label>Qtd. Solicitada *</label><input type="number" class="item-quantidade" required min="1" placeholder="Ex: 10" value="${quantidadeSugerida}"></div><button type="button" class="btn-remover-item"><i data-lucide="trash-2"></i></button>`;
+                    itemRow.innerHTML = `
+                        <div class="form-group">
+                            <input type="text" class="item-codigo" required placeholder="Código do produto" value="${produto}">
+                        </div>
+                        <div class="form-group">
+                            <input type="number" class="item-quantidade" required min="1" placeholder="Ex: 10" value="${quantidadeSugerida}">
+                        </div>
+                        <button type="button" class="btn-remover-item" aria-label="Remover item">
+                            <i data-lucide="trash-2"></i>
+                        </button>
+                    `;
                     itensContainer.appendChild(itemRow);
                     
                     itemRow.querySelector('.btn-remover-item').addEventListener('click', () => {
@@ -1089,23 +1234,39 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // --- Carregar Transferências da API ---
-    async function carregarTransferencias() {
+    async function carregarTransferencias(mostrarLoading = false) {
         try {
+            if (mostrarLoading) {
+                showLoading('Atualizando transferências...');
+            }
             const response = await apiFetch('/api/transferencias');
             
             if (response.ok) {
                 transferencias = await response.json();
+                transferenciasCarregadas = true;
                 
-                // Calcular próximo ID baseado nas transferências existentes
-                if (transferencias.length > 0) {
-                    const lastId = transferencias[transferencias.length - 1].id;
-                    const match = lastId.match(/TRANSF-\d{4}-(\d{3})/);
+                // Calcular próximo ID baseado no maior sequencial do ano atual
+                const anoAtual = new Date().getFullYear();
+                let maiorSequencial = 0;
+                
+                transferencias.forEach(t => {
+                    const match = t.id?.match(/TRANSF-(\d{4})-(\d{3})/);
                     if (match) {
-                        nextId = parseInt(match[1], 10) + 1;
+                        const ano = parseInt(match[1], 10);
+                        const sequencial = parseInt(match[2], 10);
+                        if (ano === anoAtual && sequencial > maiorSequencial) {
+                            maiorSequencial = sequencial;
+                        }
                     }
-                }
+                });
+                
+                nextId = maiorSequencial + 1;
                 
                 updateDashboard();
+
+                if (views.visualizacao.style.display !== 'none') {
+                    aplicarFiltros();
+                }
             } else {
                 const error = await response.json();
                 await showAlert(error.error || 'Erro ao carregar transferências', 'Erro', 'danger');
@@ -1113,6 +1274,10 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (error) {
             console.error('Erro ao carregar transferências:', error);
             await showAlert('Erro de conexão com o servidor', 'Erro', 'danger');
+        } finally {
+            if (mostrarLoading) {
+                hideLoading();
+            }
         }
     }
     
@@ -1203,8 +1368,20 @@ document.addEventListener('DOMContentLoaded', function() {
     const filtroOrigem = document.getElementById('filtro-origem');
     const filtroDestino = document.getElementById('filtro-destino');
     const filtroProduto = document.getElementById('filtro-produto');
+    const filtroMinhaFilial = document.getElementById('filtro-minha-filial');
     const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
     const btnLimparFiltros = document.getElementById('btn-limpar-filtros');
+    const btnAtualizarTransferencias = document.getElementById('btn-atualizar-transferencias');
+    const minhaFilialNome = (usuario.filial || '').trim().toLowerCase();
+    
+    if (filtroMinhaFilial) {
+        if (minhaFilialNome) {
+            filtroMinhaFilial.checked = true;
+        } else {
+            filtroMinhaFilial.checked = false;
+            filtroMinhaFilial.disabled = true;
+        }
+    }
     
     // Popular selects de filtro
     function popularFiltros() {
@@ -1235,28 +1412,44 @@ document.addEventListener('DOMContentLoaded', function() {
                 filtroDestino.appendChild(optionDestino);
             }
         });
+
+        aplicarFiltros();
     }
     
     // Aplicar filtros
     function aplicarFiltros() {
+        if (!transferenciasCarregadas) {
+            transferListContainer.innerHTML = '<p style="text-align: center; padding: 40px; color: #6c757d;">Carregando transferências...</p>';
+            return;
+        }
+
         const tagSelecionada = filtroTag.value.toLowerCase();
         const origemSelecionada = filtroOrigem.value.toLowerCase();
         const destinoSelecionado = filtroDestino.value.toLowerCase();
         const produtoDigitado = filtroProduto.value.toLowerCase().trim();
-        
+        const apenasMinhaFilial = filtroMinhaFilial && filtroMinhaFilial.checked && minhaFilialNome;
+
         const filtrados = transferencias.filter(t => {
+            const origemLower = (t.origem || '').toLowerCase();
+            const destinoLower = (t.destino || '').toLowerCase();
+
+            if (apenasMinhaFilial) {
+                const participa = origemLower === minhaFilialNome || destinoLower === minhaFilialNome;
+                if (!participa) return false;
+            }
+
             // Filtro por tag
             if (tagSelecionada && (!t.tags || !t.tags.some(tag => tag.toLowerCase() === tagSelecionada))) {
                 return false;
             }
             
             // Filtro por origem
-            if (origemSelecionada && t.origem.toLowerCase() !== origemSelecionada) {
+            if (origemSelecionada && origemLower !== origemSelecionada) {
                 return false;
             }
             
             // Filtro por destino
-            if (destinoSelecionado && t.destino.toLowerCase() !== destinoSelecionado) {
+            if (destinoSelecionado && destinoLower !== destinoSelecionado) {
                 return false;
             }
             
@@ -1270,7 +1463,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         
         // Renderizar resultados filtrados
-        renderTransferListFiltrada(filtrados);
+        renderTransferListFiltrada(filtrados.length > 0 ? filtrados : []);
     }
     
     // Renderizar lista filtrada
@@ -1341,15 +1534,27 @@ document.addEventListener('DOMContentLoaded', function() {
         filtroOrigem.value = '';
         filtroDestino.value = '';
         filtroProduto.value = '';
-        renderTransferList(transferListContainer);
+        if (minhaFilialNome && filtroMinhaFilial && !filtroMinhaFilial.disabled) {
+            filtroMinhaFilial.checked = true;
+        }
+        aplicarFiltros();
     }
     
     // Event listeners dos filtros
     btnAplicarFiltros.addEventListener('click', aplicarFiltros);
     btnLimparFiltros.addEventListener('click', limparFiltros);
+    filtroTag.addEventListener('change', aplicarFiltros);
+    filtroOrigem.addEventListener('change', aplicarFiltros);
+    filtroDestino.addEventListener('change', aplicarFiltros);
+    if (filtroMinhaFilial) {
+        filtroMinhaFilial.addEventListener('change', aplicarFiltros);
+    }
     filtroProduto.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') aplicarFiltros();
     });
+    if (btnAtualizarTransferencias) {
+        btnAtualizarTransferencias.addEventListener('click', () => carregarTransferencias(true));
+    }
     
     // Popular filtros quando tags e filiais carregarem
     const popularFiltrosTimeout = setInterval(() => {
@@ -1358,642 +1563,5 @@ document.addEventListener('DOMContentLoaded', function() {
             clearInterval(popularFiltrosTimeout);
         }
     }, 500);
-    
-    // ========================================
-    // CHAT ENTRE FILIAIS
-    // ========================================
-    
-    const chatToggle = document.getElementById('chat-toggle');
-    const chatModal = document.getElementById('chat-modal');
-    const chatClose = document.getElementById('chat-close');
-    const chatMessages = document.getElementById('chat-messages');
-    const chatInput = document.getElementById('chat-input');
-    const chatSend = document.getElementById('chat-send');
-    const chatBadge = document.getElementById('chat-badge');
-    const chatFilialSelect = document.getElementById('chat-filial-select');
-    
-    let mensagens = [];
-    let chatAberto = false;
-    let ultimoIdMensagem = 0;
-    let pollingInterval = null;
-    let filialSelecionada = '';
-    let minhaFilial = '';
-    let replyToMessage = null; // Mensagem sendo respondida
-    
-    // Carregar filiais no select do chat
-    async function carregarFiliaisChat() {
-        try {
-            // Pegar filial do usuário logado (USAR O NOME CORRETO!)
-            let usuario = JSON.parse(localStorage.getItem('stoklink_user'));
-            
-            console.log('═══════════════════════════════════════════');
-            console.log('🔍 DEBUG CHAT - INFORMAÇÕES DO USUÁRIO');
-            console.log('═══════════════════════════════════════════');
-            console.log('📦 Usuário completo do localStorage:', usuario);
-            console.log('📍 Filial no localStorage:', usuario?.filial);
-            console.log('🔑 Token existe:', !!localStorage.getItem('stoklink_token'));
-            console.log('═══════════════════════════════════════════');
-            
-            // Se não tem filial no localStorage, buscar do backend
-            if (usuario && !usuario.filial) {
-                console.log('⚠️ Usuário sem filial no localStorage, buscando do servidor...');
-                try {
-                    const response = await apiFetch('/api/auth/me');
-                    console.log('🔙 Resposta do servidor (status):', response.status);
-                    
-                    if (response.ok) {
-                        const userData = await response.json();
-                        console.log('🔙 Dados retornados do servidor:', userData);
-                        console.log('📍 Filial do servidor:', userData.filial);
-                        
-                        if (userData.filial) {
-                            usuario.filial = userData.filial;
-                            localStorage.setItem('stoklink_user', JSON.stringify(usuario));
-                            console.log('✅ Filial atualizada no localStorage:', userData.filial);
-                        } else {
-                            console.error('⚠️ Servidor retornou dados mas sem filial!');
-                        }
-                    } else {
-                        const errorData = await response.json();
-                        console.error('❌ Erro do servidor:', errorData);
-                    }
-                } catch (error) {
-                    console.error('❌ Erro ao buscar dados do usuário:', error);
-                }
-            }
-            
-            if (usuario && usuario.filial) {
-                minhaFilial = usuario.filial;
-                console.log('✅ Minha filial definida:', minhaFilial);
-            } else {
-                console.error('❌ Usuário não tem filial definida!');
-                console.error('💡 Solução: Verifique se a coluna "filial" no banco tem valor para seu usuário');
-                chatMessages.innerHTML = '<p style="text-align: center; color: #dc3545; padding: 20px;">Erro: Seu usuário não tem filial definida. Entre em contato com o administrador.</p>';
-                return;
-            }
-            
-            const response = await apiFetch('/api/filiais');
-            if (response.ok) {
-                const filiais = await response.json();
-                
-                chatFilialSelect.innerHTML = '<option value="">Selecione uma filial...</option>';
-                filiais.forEach(f => {
-                    // Não mostrar a própria filial na lista
-                    if (f.nome !== minhaFilial) {
-                        const option = document.createElement('option');
-                        option.value = f.nome;
-                        option.textContent = f.nome;
-                        chatFilialSelect.appendChild(option);
-                    }
-                });
-            }
-        } catch (error) {
-            console.error('Erro ao carregar filiais:', error);
-        }
-    }
-    
-    // Quando selecionar uma filial
-    chatFilialSelect.addEventListener('change', () => {
-        filialSelecionada = chatFilialSelect.value;
-        
-        // Parar polling anterior
-        pararPolling();
-        
-        if (filialSelecionada) {
-            chatInput.disabled = false;
-            chatSend.disabled = false;
-            document.getElementById('chat-emoji-btn').disabled = false;
-            chatInput.placeholder = 'Digite sua mensagem...';
-            chatInput.focus();
-            
-            // Limpar mensagens e recarregar
-            mensagens = [];
-            ultimoIdMensagem = 0;
-            carregarMensagens();
-            
-            // Iniciar polling para buscar mensagens novas
-            if (chatAberto) {
-                iniciarPolling();
-                console.log('🔄 Polling iniciado para', filialSelecionada);
-            }
-        } else {
-            chatInput.disabled = true;
-            chatSend.disabled = true;
-            document.getElementById('chat-emoji-btn').disabled = true;
-            chatInput.placeholder = 'Selecione uma filial primeiro...';
-            chatMessages.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">Selecione uma filial para conversar</p>';
-        }
-    });
-    
-    // Abrir/fechar chat
-    chatToggle.addEventListener('click', () => {
-        chatAberto = !chatAberto;
-        chatModal.classList.toggle('active');
-        
-        if (chatAberto) {
-            carregarFiliaisChat();
-            if (filialSelecionada) {
-                carregarMensagens();
-                iniciarPolling();
-            }
-            chatBadge.style.display = 'none';
-            chatBadge.textContent = '0';
-        } else {
-            pararPolling();
-        }
-        
-        lucide.createIcons();
-    });
-    
-    chatClose.addEventListener('click', () => {
-        chatAberto = false;
-        chatModal.classList.remove('active');
-        pararPolling();
-    });
-    
-    // Carregar mensagens
-    async function carregarMensagens(apenasNovas = false) {
-        if (!filialSelecionada || !minhaFilial) {
-            console.log('Filial não selecionada');
-            return;
-        }
-        
-        try {
-            let url = `/api/mensagens?minhaFilial=${encodeURIComponent(minhaFilial)}&outraFilial=${encodeURIComponent(filialSelecionada)}`;
-            
-            if (apenasNovas && ultimoIdMensagem > 0) {
-                url += `&ultimoId=${ultimoIdMensagem}`;
-            }
-            
-            console.log('📥 Carregando mensagens:', url);
-                
-            const response = await apiFetch(url);
-            
-            if (response.ok) {
-                const novasMensagens = await response.json();
-                
-                console.log(`✅ ${novasMensagens.length} mensagens recebidas`);
-                
-                if (novasMensagens.length > 0) {
-                    if (apenasNovas) {
-                        mensagens = [...mensagens, ...novasMensagens];
-                        
-                        // Atualizar badge se chat está fechado
-                        if (!chatAberto) {
-                            const badgeCount = parseInt(chatBadge.textContent) || 0;
-                            chatBadge.textContent = badgeCount + novasMensagens.length;
-                            chatBadge.style.display = 'flex';
-                        }
-                    } else {
-                        mensagens = novasMensagens;
-                    }
-                    
-                    if (mensagens.length > 0) {
-                        ultimoIdMensagem = Math.max(...mensagens.map(m => m.id));
-                    }
-                }
-                
-                // SEMPRE renderizar, mesmo se não tiver mensagens novas
-                renderizarMensagens();
-            } else {
-                const errorData = await response.json();
-                console.error('❌ Erro ao buscar mensagens:', errorData);
-                chatMessages.innerHTML = '<p style="text-align: center; color: #dc3545; padding: 20px;">Erro ao carregar mensagens</p>';
-            }
-        } catch (error) {
-            console.error('❌ Erro ao carregar mensagens:', error);
-            chatMessages.innerHTML = '<p style="text-align: center; color: #dc3545; padding: 20px;">Erro de conexão</p>';
-        }
-    }
-    
-    // Renderizar mensagens
-    function renderizarMensagens(termoBusca = '', forcarScroll = false) {
-        if (mensagens.length === 0) {
-            chatMessages.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">Nenhuma mensagem ainda. Seja o primeiro a conversar!</p>';
-            return;
-        }
-        
-        const usuario = JSON.parse(localStorage.getItem('stoklink_user'));
-        if (!usuario || !usuario.id) {
-            console.error('Usuário não encontrado no localStorage');
-            return;
-        }
-        const usuarioId = usuario.id;
-        
-        // Verificar se o usuário está perto do final (tolerância de 100px)
-        const estaNoFinal = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 100;
-        
-        // Filtrar mensagens pela busca
-        let mensagensFiltradas = mensagens;
-        if (termoBusca) {
-            mensagensFiltradas = mensagens.filter(msg => 
-                msg.mensagem.toLowerCase().includes(termoBusca.toLowerCase())
-            );
-            
-            if (mensagensFiltradas.length === 0) {
-                chatMessages.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">Nenhuma mensagem encontrada para "' + termoBusca + '"</p>';
-                return;
-            }
-        }
-        
-        chatMessages.innerHTML = mensagensFiltradas.map((msg, index) => {
-            const isOwn = msg.usuario_id === usuarioId;
-            const data = new Date(msg.created_at);
-            const hora = data.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-            
-            // Highlight do termo de busca
-            let mensagemTexto = msg.mensagem;
-            if (termoBusca) {
-                const regex = new RegExp(`(${termoBusca})`, 'gi');
-                mensagemTexto = mensagemTexto.replace(regex, '<mark>$1</mark>');
-            }
-            
-            // Renderizar mensagem respondida
-            let repliedHTML = '';
-            if (msg.reply_to_id && msg.reply_mensagem) {
-                repliedHTML = `
-                    <div class="chat-message-replied" data-scroll-to="${msg.reply_to_id}">
-                        <div class="chat-message-replied-header">${msg.reply_usuario_nome}</div>
-                        <div class="chat-message-replied-text">${msg.reply_mensagem}</div>
-                    </div>
-                `;
-            }
-            
-            // Renderizar reações
-            let reacoesHTML = '';
-            if (msg.reacoes) {
-                const reacoes = typeof msg.reacoes === 'string' ? JSON.parse(msg.reacoes) : msg.reacoes;
-                const reacoesArray = Object.entries(reacoes);
-                
-                if (reacoesArray.length > 0) {
-                    reacoesHTML = '<div class="chat-message-reactions">';
-                    reacoesArray.forEach(([emoji, usuarios]) => {
-                        const reagiu = usuarios.includes(usuarioId);
-                        reacoesHTML += `
-                            <div class="chat-reaction ${reagiu ? 'reacted' : ''}" data-msg-id="${msg.id}" data-emoji="${emoji}">
-                                <span class="chat-reaction-emoji">${emoji}</span>
-                                <span class="chat-reaction-count">${usuarios.length}</span>
-                            </div>
-                        `;
-                    });
-                    reacoesHTML += '</div>';
-                }
-            }
-            
-            return `
-                <div class="chat-message ${isOwn ? 'own' : 'other'}" data-msg-id="${msg.id}">
-                    ${!isOwn ? `<div class="chat-message-header">${msg.usuario_nome}</div>` : ''}
-                    ${repliedHTML}
-                    <div class="chat-message-content">${mensagemTexto}</div>
-                    <div class="chat-message-time">${hora}</div>
-                    ${reacoesHTML}
-                    <button class="chat-message-reply-btn" data-msg-id="${msg.id}">
-                        <i data-lucide="corner-up-left"></i>
-                    </button>
-                    <button class="chat-message-react-btn" data-msg-id="${msg.id}">😊</button>
-                    <div class="chat-reaction-picker" id="picker-${msg.id}">
-                        ${['✔️', '❌', '👍', '🚨', '❤️', '😂', '😮', '🙏'].map(emoji => 
-                            `<div class="chat-reaction-picker-emoji" data-msg-id="${msg.id}" data-emoji="${emoji}">${emoji}</div>`
-                        ).join('')}
-                    </div>
-                </div>
-            `;
-        }).join('');
-        
-        // Adicionar event listeners para reply
-        document.querySelectorAll('.chat-message-reply-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const msgId = parseInt(btn.dataset.msgId);
-                const msg = mensagens.find(m => m.id === msgId);
-                
-                if (msg) {
-                    mostrarReplyPreview(msg);
-                }
-            });
-        });
-        
-        // Adicionar event listeners para clicar em mensagem respondida (scroll)
-        document.querySelectorAll('.chat-message-replied').forEach(replied => {
-            replied.addEventListener('click', () => {
-                const targetId = replied.dataset.scrollTo;
-                const targetElement = document.querySelector(`[data-msg-id="${targetId}"]`);
-                
-                if (targetElement) {
-                    targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    targetElement.style.background = '#fff3cd';
-                    setTimeout(() => {
-                        targetElement.style.background = '';
-                    }, 1500);
-                }
-            });
-        });
-        
-        // Adicionar event listeners para reações
-        document.querySelectorAll('.chat-message-react-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const msgId = btn.dataset.msgId;
-                const picker = document.getElementById(`picker-${msgId}`);
-                
-                // Fechar outros pickers
-                document.querySelectorAll('.chat-reaction-picker').forEach(p => {
-                    if (p.id !== `picker-${msgId}`) p.classList.remove('active');
-                });
-                
-                picker.classList.toggle('active');
-            });
-        });
-        
-        document.querySelectorAll('.chat-reaction-picker-emoji').forEach(emoji => {
-            emoji.addEventListener('click', (e) => {
-                e.stopPropagation();
-                reagirMensagem(emoji.dataset.msgId, emoji.dataset.emoji);
-                document.getElementById(`picker-${emoji.dataset.msgId}`).classList.remove('active');
-            });
-        });
-        
-        document.querySelectorAll('.chat-reaction').forEach(reaction => {
-            reaction.addEventListener('click', (e) => {
-                e.stopPropagation();
-                reagirMensagem(reaction.dataset.msgId, reaction.dataset.emoji);
-            });
-        });
-        
-        // Fechar picker ao clicar fora
-        document.addEventListener('click', () => {
-            document.querySelectorAll('.chat-reaction-picker').forEach(p => p.classList.remove('active'));
-        });
-        
-        // Scroll para o final APENAS se:
-        // 1. Forçado (enviou mensagem nova)
-        // 2. Usuário estava no final E não está buscando
-        if (forcarScroll || (estaNoFinal && !termoBusca)) {
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-        
-        // Renderizar ícones Lucide
-        lucide.createIcons();
-    }
-    
-    // Reagir a uma mensagem
-    async function reagirMensagem(mensagemId, emoji) {
-        try {
-            const response = await apiFetch(`/api/mensagens/${mensagemId}/reacao`, {
-                method: 'POST',
-                body: JSON.stringify({ emoji })
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                
-                // Atualizar mensagem local
-                const msgIndex = mensagens.findIndex(m => m.id == mensagemId);
-                if (msgIndex > -1) {
-                    mensagens[msgIndex].reacoes = data.reacoes;
-                    renderizarMensagens(document.getElementById('chat-search').value);
-                }
-            }
-        } catch (error) {
-            console.error('Erro ao reagir:', error);
-        }
-    }
-    
-    // Mostrar preview da mensagem sendo respondida
-    function mostrarReplyPreview(msg) {
-        replyToMessage = msg;
-        
-        const replyPreview = document.getElementById('chat-reply-preview');
-        const replyPreviewUser = document.getElementById('chat-reply-preview-user');
-        const replyPreviewText = document.getElementById('chat-reply-preview-text');
-        
-        replyPreviewUser.textContent = msg.usuario_nome;
-        replyPreviewText.textContent = msg.mensagem;
-        replyPreview.style.display = 'flex';
-        
-        chatInput.focus();
-    }
-    
-    // Esconder preview de resposta
-    function esconderReplyPreview() {
-        replyToMessage = null;
-        document.getElementById('chat-reply-preview').style.display = 'none';
-    }
-    
-    // Enviar mensagem
-    async function enviarMensagem() {
-        const mensagem = chatInput.value.trim();
-        
-        if (!mensagem || !filialSelecionada || !minhaFilial) return;
-        
-        try {
-            const payload = { 
-                mensagem,
-                filialOrigem: minhaFilial,
-                filialDestino: filialSelecionada
-            };
-            
-            // Adicionar reply_to_id se estiver respondendo
-            if (replyToMessage) {
-                payload.replyToId = replyToMessage.id;
-            }
-            
-            const response = await apiFetch('/api/mensagens', {
-                method: 'POST',
-                body: JSON.stringify(payload)
-            });
-            
-            if (response.ok) {
-                const novaMensagem = await response.json();
-                mensagens.push(novaMensagem);
-                ultimoIdMensagem = novaMensagem.id;
-                renderizarMensagens('', true); // Forçar scroll ao enviar mensagem
-                chatInput.value = '';
-                esconderReplyPreview(); // Esconder preview após enviar
-            } else {
-                const errorData = await response.json();
-                console.error('Erro do servidor:', errorData);
-                await showAlert(errorData.error || 'Erro ao enviar mensagem', 'Erro', 'danger');
-            }
-        } catch (error) {
-            console.error('Erro ao enviar mensagem:', error);
-            await showAlert('Erro de conexão com o servidor', 'Erro', 'danger');
-        }
-    }
-    
-    chatSend.addEventListener('click', enviarMensagem);
-    
-    chatInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            enviarMensagem();
-        }
-    });
-    
-    // Polling (buscar novas mensagens a cada 3 segundos)
-    function iniciarPolling() {
-        pollingInterval = setInterval(() => {
-            carregarMensagens(true);
-        }, 3000);
-    }
-    
-    function pararPolling() {
-        if (pollingInterval) {
-            clearInterval(pollingInterval);
-            pollingInterval = null;
-        }
-    }
-    
-    // Buscar mensagens novas mesmo com chat fechado (a cada 10 segundos)
-    setInterval(() => {
-        if (!chatAberto) {
-            carregarMensagens(true);
-        }
-    }, 10000);
-    
-    // ========================================
-    // BUSCA DE MENSAGENS
-    // ========================================
-    
-    const chatSearch = document.getElementById('chat-search');
-    const chatSearchClear = document.getElementById('chat-search-clear');
-    
-    chatSearch.addEventListener('input', (e) => {
-        const termo = e.target.value;
-        
-        if (termo) {
-            chatSearchClear.style.display = 'flex';
-        } else {
-            chatSearchClear.style.display = 'none';
-        }
-        
-        renderizarMensagens(termo);
-    });
-    
-    chatSearchClear.addEventListener('click', () => {
-        chatSearch.value = '';
-        chatSearchClear.style.display = 'none';
-        renderizarMensagens('');
-    });
-    
-    // ========================================
-    // REPLY PREVIEW
-    // ========================================
-    
-    const chatReplyPreviewClose = document.getElementById('chat-reply-preview-close');
-    
-    chatReplyPreviewClose.addEventListener('click', () => {
-        esconderReplyPreview();
-    });
-    
-    // ========================================
-    // EMOJI PICKER NO INPUT
-    // ========================================
-    
-    const chatEmojiBtn = document.getElementById('chat-emoji-btn');
-    const chatEmojiPicker = document.getElementById('chat-emoji-picker');
-    const chatEmojiGrid = document.getElementById('chat-emoji-grid');
-    
-    // Lista de emojis
-    const emojis = ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','☺️','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','🤐','🤨','😐','😑','😶','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🤧','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','😟','🙁','☹️','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬','😈','👿','💀','☠️','💩','🤡','👹','👺','👻','👽','👾','🤖','😺','😸','😹','😻','😼','😽','🙀','😿','😾','🙈','🙉','🙊','💋','💌','💘','💝','💖','💗','💓','💞','💕','💟','❣️','💔','❤️','🧡','💛','💚','💙','💜','🤎','🖤','🤍','💯','💢','💥','💫','💦','💨','🕳️','💣','💬','🗨️','🗯️','💭','💤','👋','🤚','🖐️','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦿','🦵','🦶','👂','🦻','👃','🧠','🫀','🫁','🦷','🦴','👀','👁️','👅','👄','✔️','❌','🚨','⚠️','🔥','⭐','✨','🎉','🎊','🎁','🏆','🎯','📌','📍','🔔','🔕','📢','📣','💼','📁','📂','📄','📃','📋','📊','📈','📉','🗂️','📅','📆','📇','🗃️','🗄️','📦','📪','📫','📬','📭','📮','✉️','📧','📨','📩','💌','📤','📥'];
-    
-    // Popular emoji picker
-    chatEmojiGrid.innerHTML = emojis.map(emoji => 
-        `<span class="chat-emoji-picker-item">${emoji}</span>`
-    ).join('');
-    
-    // Abrir/fechar emoji picker
-    chatEmojiBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const isVisible = chatEmojiPicker.style.display === 'block';
-        chatEmojiPicker.style.display = isVisible ? 'none' : 'block';
-    });
-    
-    // Inserir emoji no input ao clicar
-    chatEmojiGrid.addEventListener('click', (e) => {
-        if (e.target.classList.contains('chat-emoji-picker-item')) {
-            const emoji = e.target.textContent;
-            const cursorPos = chatInput.selectionStart;
-            const textBefore = chatInput.value.substring(0, cursorPos);
-            const textAfter = chatInput.value.substring(cursorPos);
-            
-            chatInput.value = textBefore + emoji + textAfter;
-            chatInput.focus();
-            
-            // Posicionar cursor após o emoji
-            const newPos = cursorPos + emoji.length;
-            chatInput.setSelectionRange(newPos, newPos);
-            
-            // Fechar picker
-            chatEmojiPicker.style.display = 'none';
-        }
-    });
-    
-    // Fechar picker ao clicar fora
-    document.addEventListener('click', (e) => {
-        if (!chatEmojiBtn.contains(e.target) && !chatEmojiPicker.contains(e.target)) {
-            chatEmojiPicker.style.display = 'none';
-        }
-    });
-
-    // --- Sistema de Atualização Automática ---
-    let quantidadeAnterior = 0;
-    
-    async function verificarNovasTransferencias() {
-        try {
-            const response = await apiFetch('/api/transferencias');
-            if (response.ok) {
-                const novasTransferencias = await response.json();
-                
-                // Verificar se há novas transferências
-                if (quantidadeAnterior > 0 && novasTransferencias.length > quantidadeAnterior) {
-                    const diferenca = novasTransferencias.length - quantidadeAnterior;
-                    mostrarNotificacao(`${diferenca} nova(s) transferência(s)!`, 'Nova transferência criada', 'info');
-                    
-                    // Atualizar dados
-                    transferencias = novasTransferencias;
-                    updateDashboard();
-                }
-                
-                quantidadeAnterior = novasTransferencias.length;
-            }
-        } catch (error) {
-            console.error('Erro ao verificar novas transferências:', error);
-        }
-    }
-    
-    function mostrarNotificacao(mensagem, titulo = 'Notificação', tipo = 'info') {
-        // Criar elemento de notificação
-        const notificacao = document.createElement('div');
-        notificacao.className = `notificacao notificacao-${tipo}`;
-        notificacao.innerHTML = `
-            <div class="notificacao-content">
-                <strong>${titulo}</strong>
-                <p>${mensagem}</p>
-            </div>
-        `;
-        
-        document.body.appendChild(notificacao);
-        
-        // Mostrar notificação com animação
-        setTimeout(() => notificacao.classList.add('show'), 100);
-        
-        // Remover após 5 segundos
-        setTimeout(() => {
-            notificacao.classList.remove('show');
-            setTimeout(() => notificacao.remove(), 300);
-        }, 5000);
-    }
-    
-    // Iniciar polling a cada 30 segundos
-    setInterval(verificarNovasTransferencias, 30000);
-
-    // --- Inicialização ---
-    adicionarItem();
-    carregarTags();
-    carregarFiliais();
-    carregarTransferencias().then(() => {
-        quantidadeAnterior = transferencias.length;
-    });
-    showView('dashboard');
-    lucide.createIcons(); // Renderiza todos os ícones iniciais
 });
+    

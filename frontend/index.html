@@ -77,7 +77,14 @@
                         </div>
                     </div>
                     <input type="file" id="file-input-xlsx" accept=".xlsx,.xls" style="display: none;">
-                    <div id="itens-container"></div>
+                    <div class="itens-table-wrapper">
+                        <div class="itens-table-header">
+                            <span>Código do Produto *</span>
+                            <span>Qtd. Solicitada *</span>
+                            <span>Ações</span>
+                        </div>
+                        <div id="itens-container" class="itens-table-body"></div>
+                    </div>
                 </div>
                 <div class="actions-footer">
                     <button type="button" class="btn btn-secondary" id="btn-cancelar"><i data-lucide="x"></i> Cancelar</button>
@@ -119,9 +126,16 @@
                         <input type="text" id="filtro-produto" placeholder="Digite o código do produto">
                     </div>
                 </div>
-                <div class="actions-footer" style="margin-top: 10px;">
-                    <button type="button" class="btn btn-secondary" id="btn-limpar-filtros"><i data-lucide="x"></i> Limpar Filtros</button>
-                    <button type="button" class="btn btn-primary" id="btn-aplicar-filtros"><i data-lucide="search"></i> Aplicar Filtros</button>
+                <div class="filter-footer">
+                    <label class="checkbox-toggle">
+                        <input type="checkbox" id="filtro-minha-filial" checked>
+                        <span>Mostrar apenas movimentações da minha filial</span>
+                    </label>
+                    <div class="filter-buttons">
+                        <button type="button" class="btn btn-secondary" id="btn-limpar-filtros"><i data-lucide="x"></i> Limpar Filtros</button>
+                        <button type="button" class="btn btn-info" id="btn-atualizar-transferencias"><i data-lucide="refresh-cw"></i> Atualizar Lista</button>
+                        <button type="button" class="btn btn-primary" id="btn-aplicar-filtros"><i data-lucide="search"></i> Aplicar Filtros</button>
+                    </div>
                 </div>
             </div>
             
@@ -134,7 +148,12 @@
         <div id="detalhe-view" style="display: none;">
             <div id="detalhe-header">
                 <div><h2 id="detalhe-id"></h2><p class="subtitle">Detalhes da transferência</p></div>
-                <div id="detalhe-status-tag"></div>
+                <div class="detalhe-header-right">
+                    <button class="btn btn-secondary" id="btn-exportar-transferencia" style="display: none;">
+                        <i data-lucide="download"></i> Exportar Itens
+                    </button>
+                    <div id="detalhe-status-tag"></div>
+                </div>
             </div>
             <div class="card">
                  <div class="card-header"><i data-lucide="info"></i>Informações da Transferência</div>
@@ -168,8 +187,18 @@
                 </div>
             </div>
             <div class="card">
-                <div class="card-header"><i data-lucide="boxes"></i>Itens da Transferência</div>
-                <div id="detalhe-itens-lista"></div>
+                <div class="card-header" style="justify-content: space-between;">
+                    <span><i data-lucide="boxes"></i>Itens da Transferência</span>
+                    <span id="detalhe-total-itens" class="badge badge-light"></span>
+                </div>
+                <div class="detalhe-itens-wrapper">
+                    <div class="detalhe-itens-header">
+                        <span>Código</span>
+                        <span>Qtd. Solicitada</span>
+                        <span id="detalhe-coluna-atendida" style="display:none;">Qtd. Atendida</span>
+                    </div>
+                    <div id="detalhe-itens-lista" class="detalhe-itens-body"></div>
+                </div>
             </div>
             <div class="card">
                 <div class="card-header"><i data-lucide="check-square"></i>Ações Disponíveis</div>
@@ -198,58 +227,12 @@
         </div>
     </div>
 
-    <!-- Botão Flutuante de Chat -->
-    <button id="chat-toggle" class="chat-toggle">
-        <i data-lucide="message-circle"></i>
-        <span id="chat-badge" class="chat-badge" style="display: none;">0</span>
-    </button>
-
-    <!-- Modal de Chat -->
-    <div id="chat-modal" class="chat-modal">
-        <div class="chat-header">
-            <div>
-                <h3><i data-lucide="message-circle"></i> Chat entre Filiais</h3>
-                <div class="chat-select-container">
-                    <label for="chat-filial-select" style="font-size: 12px; margin-right: 8px;">Conversar com:</label>
-                    <select id="chat-filial-select" class="chat-filial-select">
-                        <option value="">Selecione uma filial...</option>
-                    </select>
-                </div>
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-card">
+            <div class="loading-spinner">
+                <span></span><span></span><span></span><span></span>
             </div>
-            <button id="chat-close" class="chat-close-btn">
-                <i data-lucide="x"></i>
-            </button>
-        </div>
-        <div class="chat-search-container">
-            <i data-lucide="search"></i>
-            <input type="text" id="chat-search" placeholder="Buscar mensagens..." class="chat-search-input">
-            <button id="chat-search-clear" class="chat-search-clear" style="display: none;">
-                <i data-lucide="x"></i>
-            </button>
-        </div>
-        <div id="chat-messages" class="chat-messages">
-            <p style="text-align: center; color: #6c757d; padding: 20px;">Selecione uma filial para conversar</p>
-        </div>
-        <div id="chat-reply-preview" class="chat-reply-preview" style="display: none; margin: 0 15px;">
-            <div class="chat-reply-preview-content">
-                <div class="chat-reply-preview-header">Respondendo a <span id="chat-reply-preview-user"></span></div>
-                <div class="chat-reply-preview-text" id="chat-reply-preview-text"></div>
-            </div>
-            <button id="chat-reply-preview-close" class="chat-reply-preview-close">×</button>
-        </div>
-        <div class="chat-input-container">
-            <button id="chat-emoji-btn" class="chat-emoji-btn" disabled>
-                <i data-lucide="smile"></i>
-            </button>
-            <input type="text" id="chat-input" placeholder="Selecione uma filial primeiro..." maxlength="1000" disabled>
-            <button id="chat-send" class="chat-send-btn" disabled>
-                <i data-lucide="send"></i>
-            </button>
-            <div id="chat-emoji-picker" class="chat-emoji-picker-input" style="display: none;">
-                <div class="chat-emoji-picker-grid" id="chat-emoji-grid">
-                    <!-- Emojis serão inseridos via JavaScript -->
-                </div>
-            </div>
+            <p id="loading-text">Processando...</p>
         </div>
     </div>
 

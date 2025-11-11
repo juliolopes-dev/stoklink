@@ -27,6 +27,45 @@ app.use((req, res, next) => {
 // Servir arquivos estáticos do frontend
 app.use(express.static(path.join(__dirname, '../frontend')));
 
+async function validarAcessoTransferencia(transferenciaId, usuario) {
+    let filialUsuarioId = usuario.filial_id ? Number(usuario.filial_id) : null;
+
+    if (!filialUsuarioId) {
+        const [usuarios] = await db.query(
+            'SELECT filial_id FROM usuarios WHERE id = ? AND empresa_id = ?',
+            [usuario.id, usuario.empresa_id]
+        );
+
+        if (usuarios.length > 0) {
+            filialUsuarioId = usuarios[0].filial_id ? Number(usuarios[0].filial_id) : null;
+            usuario.filial_id = filialUsuarioId;
+        }
+    }
+
+    const [transferencias] = await db.query(
+        'SELECT id, filial_origem_id, filial_destino_id FROM transferencias WHERE id = ? AND empresa_id = ?',
+        [transferenciaId, usuario.empresa_id]
+    );
+
+    if (transferencias.length === 0) {
+        return { autorizado: false, status: 404, mensagem: 'Transferência não encontrada' };
+    }
+
+    if (!filialUsuarioId) {
+        return { autorizado: false, status: 403, mensagem: 'Usuário sem filial vinculada não pode alterar esta transferência' };
+    }
+
+    const transferencia = transferencias[0];
+    if (
+        transferencia.filial_origem_id !== filialUsuarioId &&
+        transferencia.filial_destino_id !== filialUsuarioId
+    ) {
+        return { autorizado: false, status: 403, mensagem: 'Apenas as filiais de origem ou destino podem alterar esta transferência' };
+    }
+
+    return { autorizado: true, transferencia };
+}
+
 // ========================================
 // ROTAS DE AUTENTICAÇÃO
 // ========================================
@@ -37,7 +76,7 @@ app.post('/api/auth/login', async (req, res) => {
     
     try {
         const [usuarios] = await db.query(`
-            SELECT u.*, e.nome as empresa_nome, f.nome as filial 
+            SELECT u.*, e.nome as empresa_nome, f.nome as filial_nome 
             FROM usuarios u
             INNER JOIN empresas e ON u.empresa_id = e.id
             LEFT JOIN filiais f ON u.filial_id = f.id
@@ -49,12 +88,14 @@ app.post('/api/auth/login', async (req, res) => {
         }
 
         const usuario = usuarios[0];
+        const filialNome = usuario.filial_nome || usuario.filial || null;
+        const filialId = usuario.filial_id || null;
         
         // Debug: verificar dados do usuário
         console.log('=== DEBUG LOGIN ===');
         console.log('Email:', email);
         console.log('Filial ID no banco:', usuario.filial_id);
-        console.log('Filial nome retornada:', usuario.filial);
+        console.log('Filial nome retornada:', filialNome);
         console.log('==================');
         
         // Verificar senha com bcrypt
@@ -71,7 +112,8 @@ app.post('/api/auth/login', async (req, res) => {
             email: usuario.email,
             nome: usuario.nome,
             role: usuario.role,
-            filial: usuario.filial
+            filial: filialNome,
+            filial_id: filialId
         }, process.env.JWT_SECRET, { expiresIn: '8h' });
 
         res.json({
@@ -81,7 +123,8 @@ app.post('/api/auth/login', async (req, res) => {
                 nome: usuario.nome,
                 email: usuario.email,
                 role: usuario.role,
-                filial: usuario.filial,
+                filial: filialNome,
+                filial_id: filialId,
                 empresa: {
                     id: usuario.empresa_id,
                     nome: usuario.empresa_nome
@@ -98,10 +141,12 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', verificarToken, async (req, res) => {
     try {
         const [usuarios] = await db.query(`
-            SELECT u.id, u.nome, u.email, u.role, u.filial, 
+            SELECT u.id, u.nome, u.email, u.role, u.filial_id,
+                   f.nome as filial_nome,
                    e.id as empresa_id, e.nome as empresa_nome
             FROM usuarios u
             INNER JOIN empresas e ON u.empresa_id = e.id
+            LEFT JOIN filiais f ON u.filial_id = f.id
             WHERE u.id = ?
         `, [req.usuario.id]);
 
@@ -110,11 +155,12 @@ app.get('/api/auth/me', verificarToken, async (req, res) => {
         }
 
         const usuario = usuarios[0];
+        const filialNome = usuario.filial_nome || null;
         
         console.log('🔍 DEBUG /api/auth/me:', {
             usuarioId: req.usuario.id,
-            filial: usuario.filial,
-            filialIsNull: usuario.filial === null,
+            filial: filialNome,
+            filialIsNull: filialNome === null,
             dados: usuario
         });
         
@@ -123,7 +169,8 @@ app.get('/api/auth/me', verificarToken, async (req, res) => {
             nome: usuario.nome,
             email: usuario.email,
             role: usuario.role,
-            filial: usuario.filial,
+            filial: filialNome,
+            filial_id: usuario.filial_id,
             empresa: {
                 id: usuario.empresa_id,
                 nome: usuario.empresa_nome
@@ -499,6 +546,11 @@ app.put('/api/transferencias/:id/status', verificarToken, async (req, res) => {
     const { status } = req.body;
     
     try {
+        const acesso = await validarAcessoTransferencia(req.params.id, req.usuario);
+        if (!acesso.autorizado) {
+            return res.status(acesso.status).json({ error: acesso.mensagem });
+        }
+
         // Montar query dinâmica baseada no status
         let updateFields = 'status = ?';
         let updateValues = [status];
@@ -528,9 +580,15 @@ app.put('/api/transferencias/:id/status', verificarToken, async (req, res) => {
 // PUT - Atualizar quantidades atendidas
 app.put('/api/transferencias/:id/itens', verificarToken, async (req, res) => {
     const { itens } = req.body;
-    const connection = await db.getConnection();
+    let connection;
     
     try {
+        const acesso = await validarAcessoTransferencia(req.params.id, req.usuario);
+        if (!acesso.autorizado) {
+            return res.status(acesso.status).json({ error: acesso.mensagem });
+        }
+
+        connection = await db.getConnection();
         await connection.beginTransaction();
 
         for (let item of itens) {
@@ -543,11 +601,11 @@ app.put('/api/transferencias/:id/itens', verificarToken, async (req, res) => {
         await connection.commit();
         res.json({ message: 'Quantidades atualizadas com sucesso' });
     } catch (error) {
-        await connection.rollback();
+        if (connection) await connection.rollback();
         console.error('Erro ao atualizar itens:', error);
         res.status(500).json({ error: 'Erro ao atualizar itens' });
     } finally {
-        connection.release();
+        if (connection) connection.release();
     }
 });
 
@@ -560,6 +618,11 @@ app.put('/api/transferencias/:id/etapa', verificarToken, async (req, res) => {
     let params = [];
     
     try {
+        const acesso = await validarAcessoTransferencia(id, req.usuario);
+        if (!acesso.autorizado) {
+            return res.status(acesso.status).json({ error: acesso.mensagem });
+        }
+
         // Validar status
         const statusValidos = ['aguardando_separacao', 'em_separacao', 'separado', 'aguardando_lancamento', 'recebido', 'concluido', 'cancelado'];
         if (!statusValidos.includes(status)) {
@@ -614,6 +677,11 @@ app.put('/api/transferencias/:id/finalizar', verificarToken, async (req, res) =>
     const { numeroTransferenciaInterna } = req.body;
     
     try {
+        const acesso = await validarAcessoTransferencia(req.params.id, req.usuario);
+        if (!acesso.autorizado) {
+            return res.status(acesso.status).json({ error: acesso.mensagem });
+        }
+
         await db.query(
             'UPDATE transferencias SET numero_transferencia_interna = ?, status = ? WHERE id = ?',
             [numeroTransferenciaInterna, 'concluido', req.params.id]
