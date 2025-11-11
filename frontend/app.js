@@ -944,35 +944,37 @@ document.addEventListener('DOMContentLoaded', function() {
             // Ler todos os dados como array (sem usar primeira linha como cabeçalho)
             const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
             
-            // Encontrar a linha do cabeçalho (que contém "Cód. Interno" e "Qtde")
+            // Encontrar a linha do cabeçalho (que contém "Produto" e "Quantidade_Sugerida")
             let headerRowIndex = -1;
-            let codInternoColIndex = -1;
-            let qtdeSeparadaColIndex = -1;
+            let produtoColIndex = -1;
+            let quantidadeSugeridaColIndex = -1;
             
             for (let i = 0; i < rawData.length; i++) {
                 const row = rawData[i];
                 for (let j = 0; j < row.length; j++) {
-                    const cell = String(row[j] || '').toLowerCase();
-                    if (cell.includes('cód') && cell.includes('interno')) {
+                    const cell = String(row[j] || '').trim().toLowerCase();
+                    const normalized = cell.replace(/\s+/g, '').replace(/_/g, '');
+                    
+                    if (normalized === 'produto') {
                         headerRowIndex = i;
-                        codInternoColIndex = j;
+                        produtoColIndex = j;
                     }
-                    if (cell.includes('qtde') && cell.includes('separada')) {
-                        qtdeSeparadaColIndex = j;
+                    if (normalized === 'quantidadesugerida') {
+                        quantidadeSugeridaColIndex = j;
                     }
                 }
-                if (headerRowIndex >= 0 && codInternoColIndex >= 0 && qtdeSeparadaColIndex >= 0) {
+                if (headerRowIndex >= 0 && produtoColIndex >= 0 && quantidadeSugeridaColIndex >= 0) {
                     break;
                 }
             }
             
             console.log('=== DEBUG IMPORTAÇÃO XLSX ===');
             console.log('Linha do cabeçalho:', headerRowIndex);
-            console.log('Coluna Cód. Interno:', codInternoColIndex);
-            console.log('Coluna Qtde. Separada:', qtdeSeparadaColIndex);
+            console.log('Coluna Produto:', produtoColIndex);
+            console.log('Coluna Quantidade_Sugerida:', quantidadeSugeridaColIndex);
             
-            if (headerRowIndex < 0 || codInternoColIndex < 0 || qtdeSeparadaColIndex < 0) {
-                await showAlert('Não foi possível encontrar as colunas "Cód. Interno" e "Qtde. Separada" na planilha.', 'Erro', 'danger');
+            if (headerRowIndex < 0 || produtoColIndex < 0 || quantidadeSugeridaColIndex < 0) {
+                await showAlert('Não foi possível encontrar as colunas "Produto" e "Quantidade_Sugerida" na planilha.', 'Erro', 'danger');
                 fileInputXlsx.value = '';
                 return;
             }
@@ -983,8 +985,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 const row = rawData[i];
                 if (row && row.length > 0) {
                     jsonData.push({
-                        codInterno: row[codInternoColIndex],
-                        qtdeSeparada: row[qtdeSeparadaColIndex]
+                        produto: row[produtoColIndex],
+                        quantidadeSugerida: row[quantidadeSugeridaColIndex]
                     });
                 }
             }
@@ -998,15 +1000,15 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('Total de linhas a processar:', jsonData.length);
             
             for (const row of jsonData) {
-                const codInterno = row.codInterno ? String(row.codInterno).trim() : null;
-                const qtdeSeparada = row.qtdeSeparada ? Number(row.qtdeSeparada) : 0;
+                const produto = row.produto ? String(row.produto).trim() : null;
+                const quantidadeSugerida = row.quantidadeSugerida ? Number(row.quantidadeSugerida) : 0;
                 
-                console.log('Processando linha:', { codInterno, qtdeSeparada });
+                console.log('Processando linha:', { produto, quantidadeSugerida });
                 
-                if (codInterno && qtdeSeparada > 0) {
+                if (produto && quantidadeSugerida > 0) {
                     const itemRow = document.createElement('div');
                     itemRow.className = 'item-row';
-                    itemRow.innerHTML = `<div class="form-group"><label>Código do Produto *</label><input type="text" class="item-codigo" required placeholder="Código do produto" value="${codInterno}"></div><div class="form-group"><label>Qtd. Solicitada *</label><input type="number" class="item-quantidade" required min="1" placeholder="Ex: 10" value="${qtdeSeparada}"></div><button type="button" class="btn-remover-item"><i data-lucide="trash-2"></i></button>`;
+                    itemRow.innerHTML = `<div class="form-group"><label>Código do Produto *</label><input type="text" class="item-codigo" required placeholder="Código do produto" value="${produto}"></div><div class="form-group"><label>Qtd. Solicitada *</label><input type="number" class="item-quantidade" required min="1" placeholder="Ex: 10" value="${quantidadeSugerida}"></div><button type="button" class="btn-remover-item"><i data-lucide="trash-2"></i></button>`;
                     itensContainer.appendChild(itemRow);
                     
                     itemRow.querySelector('.btn-remover-item').addEventListener('click', () => {
@@ -1025,7 +1027,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (itensImportados > 0) {
                 await showAlert(`${itensImportados} itens importados com sucesso!`, 'Sucesso', 'success');
             } else {
-                await showAlert('Nenhum item válido encontrado na planilha. Verifique as colunas "Cód. Interno" e "Qtde. Separada".', 'Aviso', 'warning');
+                await showAlert('Nenhum item válido encontrado na planilha. Verifique as colunas "Produto" e "Quantidade_Sugerida".', 'Aviso', 'warning');
             }
             
         } catch (error) {
