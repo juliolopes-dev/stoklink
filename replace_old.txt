@@ -1,0 +1,59 @@
+﻿fileInputXlsx.addEventListener('change', async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        try {
+            const itens = await lerItensDeXlsx(file);
+
+            if (itens.length === 0) {
+                await showAlert('Nenhum item vÃ¡lido encontrado na planilha. Verifique as colunas \"Produto\" e \"Quantidade_Sugerida\".', 'Aviso', 'warning');
+                return;
+            }
+
+            const usarLote = await showConfirm(
+                ${itens.length} itens encontrados. Deseja gerar transferÃªncias automaticamente em lotes? (Cancelar apenas preenche o formulÃ¡rio),
+                'Importar XLSX',
+                'info'
+            );
+
+            if (usarLote) {
+                const base = await obterDadosBaseTransferencia();
+                if (!base) return;
+
+                const itensPorTransferencia = Math.max(1, parseInt(inputItensPorTransferencia?.value, 10) || 50);
+                const lotes = dividirEmLotes(itens, itensPorTransferencia);
+                const confirmado = await showConfirm(
+                    SerÃ£o criadas  transferÃªncias com atÃ©  item(s). Deseja continuar?,
+                    'ImportaÃ§Ã£o em lote',
+                    'warning'
+                );
+                if (!confirmado) return;
+
+                showLoading('Criando transferÃªncias em lote...');
+                const resultado = await criarTransferenciasEmLote(lotes, base);
+                hideLoading();
+
+                let mensagem = ${resultado.sucessos.length} transferÃªncia(s) criada(s).;
+                let titulo = 'Sucesso';
+                let tipo = 'success';
+
+                if (resultado.falhas.length > 0) {
+                    titulo = 'ImportaÃ§Ã£o parcial';
+                    tipo = 'warning';
+                    mensagem += \n falharam: .;
+                }
+
+                await showAlert(mensagem, titulo, tipo);
+                await carregarTransferencias();
+                showView('dashboard');
+            } else {
+                preencherFormularioComItens(itens);
+                await showAlert(${itens.length} itens importados para o formulÃ¡rio., 'Sucesso', 'success');
+            }
+        } catch (error) {
+            console.error('Erro ao ler arquivo XLSX:', error);
+            await showAlert(error.message || 'Erro ao processar arquivo XLSX. Verifique o formato.', 'Erro', 'danger');
+        } finally {
+            fileInputXlsx.value = '';
+        }
+    });

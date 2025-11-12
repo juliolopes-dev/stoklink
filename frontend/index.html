@@ -42,7 +42,7 @@
             </div>
             <div class="card">
                 <div class="card-header"><i data-lucide="archive"></i>Transferências Ativas Recentes</div>
-                <div id="dashboard-transfer-list"></div>
+                <div id="dashboard-transfer-list" class="scrollable-list"></div>
             </div>
         </div>
 
@@ -71,12 +71,18 @@
                 <div class="card">
                     <div class="card-header" style="justify-content: space-between;">
                         <span><i data-lucide="boxes"></i>Itens da Transferência</span>
-                        <div style="display: flex; gap: 10px;">
+                        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                             <button type="button" class="btn btn-secondary" id="btn-importar-xlsx"><i data-lucide="upload"></i> Importar XLSX</button>
+                            <button type="button" class="btn btn-secondary" id="btn-importar-csv"><i data-lucide="file-text"></i> Importar CSV (Lote)</button>
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 14px; color: #2c3e50;">
+                                Itens por transferência:
+                                <input type="number" id="input-itens-por-transferencia" min="1" value="50" style="width: 80px; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px;">
+                            </label>
                             <button type="button" class="btn btn-primary" id="btn-add-item"><i data-lucide="plus"></i> Adicionar Item</button>
                         </div>
                     </div>
                     <input type="file" id="file-input-xlsx" accept=".xlsx,.xls" style="display: none;">
+                    <input type="file" id="file-input-csv" accept=".csv" style="display: none;">
                     <div class="itens-table-wrapper">
                         <div class="itens-table-header">
                             <span>Código do Produto *</span>
@@ -140,7 +146,7 @@
             </div>
             
             <div class="card">
-                <div id="transfer-list-container"></div>
+                <div id="transfer-list-container" class="scrollable-list"></div>
             </div>
         </div>
 

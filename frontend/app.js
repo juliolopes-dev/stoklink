@@ -230,6 +230,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     let currentTransferTags = [];
     let editandoRascunhoId = null; // ID do rascunho sendo editado
     let transferenciaEmDetalhe = null;
+    let ultimaAtualizacaoTransferencias = 0;
+    const INTERVALO_ATUALIZACAO_MS = 60 * 1000; // 1 minuto
     const loadingOverlay = document.getElementById('loading-overlay');
     const loadingText = document.getElementById('loading-text');
 
@@ -344,6 +346,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                     <th>Solicitante</th>
                     <th>Nº Interno</th>
                     <th>Status</th>
+                    <th>Itens</th>
                     <th>Tags</th>
                 </tr>
             </thead>
@@ -360,6 +363,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             
             const numeroInterno = t.numeroTransferenciaInterna || '-';
             const dataFormatada = formatarData(t.data_criacao);
+            const qtdItens = Array.isArray(t.itens) ? t.itens.length : (t.total_itens || 0);
+            const labelItens = `${qtdItens} ${qtdItens === 1 ? 'item' : 'itens'}`;
             
             row.innerHTML = `
                 <td><strong>${t.id}</strong></td>
@@ -369,6 +374,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 <td>${t.solicitante}</td>
                 <td>${numeroInterno}</td>
                 <td><span class="status-tag ${statusInfo.className}">${statusInfo.text}</span></td>
+                <td><span class="badge badge-light">${labelItens}</span></td>
                 <td><div class="tags-container">${renderTags(t.tags)}</div></td>
             `;
             
@@ -1048,142 +1054,383 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     // --- Event Listeners ---
-    navButtons.dashboard.addEventListener('click', () => showView('dashboard'));
+    navButtons.dashboard.addEventListener('click', async () => {
+        showView('dashboard');
+        await atualizarTransferenciasSeNecessario();
+    });
     navButtons.cadastro.addEventListener('click', () => showView('cadastro'));
-    navButtons.visualizacao.addEventListener('click', () => { 
+    navButtons.visualizacao.addEventListener('click', async () => { 
         showView('visualizacao'); 
+        await atualizarTransferenciasSeNecessario();
         aplicarFiltros();
     });
-    btnVoltarLista.addEventListener('click', () => { 
+    btnVoltarLista.addEventListener('click', async () => { 
         showView(previousView); 
+        if (previousView === 'dashboard' || previousView === 'visualizacao') {
+            await atualizarTransferenciasSeNecessario();
+            if (previousView === 'visualizacao') {
+                aplicarFiltros();
+            }
+        }
     });
     btnAddItem.addEventListener('click', adicionarItem);
     
-    // Importar XLSX
+    // Importar XLSX/CSV em lote
     const btnImportarXlsx = document.getElementById('btn-importar-xlsx');
     const fileInputXlsx = document.getElementById('file-input-xlsx');
+    const btnImportarCsv = document.getElementById('btn-importar-csv');
+    const fileInputCsv = document.getElementById('file-input-csv');
+    const inputItensPorTransferencia = document.getElementById('input-itens-por-transferencia');
     
-    btnImportarXlsx.addEventListener('click', () => {
-        fileInputXlsx.click();
-    });
+    btnImportarXlsx.addEventListener('click', () => fileInputXlsx.click());
     
-    fileInputXlsx.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
+    fileInputXlsx.addEventListener('change', async (event) => {
+        const file = event.target.files[0];
         if (!file) return;
-        
+
         try {
-            const data = await file.arrayBuffer();
-            const workbook = XLSX.read(data);
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-            
-            // Ler todos os dados como array (sem usar primeira linha como cabeçalho)
-            const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-            
-            // Encontrar a linha do cabeçalho (que contém "Produto" e "Quantidade_Sugerida")
-            let headerRowIndex = -1;
-            let produtoColIndex = -1;
-            let quantidadeSugeridaColIndex = -1;
-            
-            for (let i = 0; i < rawData.length; i++) {
-                const row = rawData[i];
-                for (let j = 0; j < row.length; j++) {
-                    const cell = String(row[j] || '').trim().toLowerCase();
-                    const normalized = cell.replace(/\s+/g, '').replace(/_/g, '');
-                    
-                    if (normalized === 'produto') {
-                        headerRowIndex = i;
-                        produtoColIndex = j;
-                    }
-                    if (normalized === 'quantidadesugerida') {
-                        quantidadeSugeridaColIndex = j;
-                    }
-                }
-                if (headerRowIndex >= 0 && produtoColIndex >= 0 && quantidadeSugeridaColIndex >= 0) {
-                    break;
-                }
-            }
-            
-            console.log('=== DEBUG IMPORTAÇÃO XLSX ===');
-            console.log('Linha do cabeçalho:', headerRowIndex);
-            console.log('Coluna Produto:', produtoColIndex);
-            console.log('Coluna Quantidade_Sugerida:', quantidadeSugeridaColIndex);
-            
-            if (headerRowIndex < 0 || produtoColIndex < 0 || quantidadeSugeridaColIndex < 0) {
-                await showAlert('Não foi possível encontrar as colunas "Produto" e "Quantidade_Sugerida" na planilha.', 'Erro', 'danger');
-                fileInputXlsx.value = '';
+            const itens = await lerItensDeXlsx(file);
+
+            if (itens.length === 0) {
+                await showAlert('Nenhum item válido encontrado na planilha. Verifique as colunas \"Produto\" e \"Quantidade_Sugerida\".', 'Aviso', 'warning');
                 return;
             }
-            
-            // Converter para JSON usando o cabeçalho correto
-            const jsonData = [];
-            for (let i = headerRowIndex + 1; i < rawData.length; i++) {
-                const row = rawData[i];
-                if (row && row.length > 0) {
-                    jsonData.push({
-                        produto: row[produtoColIndex],
-                        quantidadeSugerida: row[quantidadeSugeridaColIndex]
-                    });
+
+            const usarLote = await showConfirm(
+                `${itens.length} itens encontrados. Deseja gerar transferências automaticamente em lotes? (Cancelar apenas preenche o formulário)`,
+                'Importar XLSX',
+                'info'
+            );
+
+            if (usarLote) {
+                const base = await obterDadosBaseTransferencia();
+                if (!base) return;
+
+                const itensPorTransferencia = Math.max(1, parseInt(inputItensPorTransferencia?.value, 10) || 50);
+                const lotes = dividirEmLotes(itens, itensPorTransferencia);
+                const confirmado = await showConfirm(
+                    `Serão criadas ${lotes.length} transferências com até ${itensPorTransferencia} item(s). Deseja continuar?`,
+                    'Importação em lote',
+                    'warning'
+                );
+                if (!confirmado) return;
+
+                showLoading('Criando transferências em lote...');
+                const resultado = await criarTransferenciasEmLote(lotes, base);
+                hideLoading();
+
+                let mensagem = `${resultado.sucessos.length} transferência(s) criada(s).`;
+                let titulo = 'Sucesso';
+                let tipo = 'success';
+
+                if (resultado.falhas.length > 0) {
+                    titulo = 'Importação parcial';
+                    tipo = 'warning';
+                    mensagem += `\n${resultado.falhas.length} falharam: ${resultado.falhas.map(f => f.id).join(', ')}.`;
                 }
-            }
-            
-            // Limpar itens existentes
-            itensContainer.innerHTML = '';
-            
-            // Processar cada linha da planilha
-            let itensImportados = 0;
-            
-            console.log('Total de linhas a processar:', jsonData.length);
-            
-            for (const row of jsonData) {
-                const produto = row.produto ? String(row.produto).trim() : null;
-                const quantidadeSugerida = row.quantidadeSugerida ? Number(row.quantidadeSugerida) : 0;
-                
-                console.log('Processando linha:', { produto, quantidadeSugerida });
-                
-                if (produto && quantidadeSugerida > 0) {
-                    const itemRow = document.createElement('div');
-                    itemRow.className = 'item-row';
-                    itemRow.innerHTML = `
-                        <div class="form-group">
-                            <input type="text" class="item-codigo" required placeholder="Código do produto" value="${produto}">
-                        </div>
-                        <div class="form-group">
-                            <input type="number" class="item-quantidade" required min="1" placeholder="Ex: 10" value="${quantidadeSugerida}">
-                        </div>
-                        <button type="button" class="btn-remover-item" aria-label="Remover item">
-                            <i data-lucide="trash-2"></i>
-                        </button>
-                    `;
-                    itensContainer.appendChild(itemRow);
-                    
-                    itemRow.querySelector('.btn-remover-item').addEventListener('click', () => {
-                        itemRow.remove();
-                    });
-                    
-                    itensImportados++;
-                }
-            }
-            
-            console.log('Total de itens importados:', itensImportados);
-            console.log('=== FIM DEBUG ===');
-            
-            lucide.createIcons();
-            
-            if (itensImportados > 0) {
-                await showAlert(`${itensImportados} itens importados com sucesso!`, 'Sucesso', 'success');
+
+                await showAlert(mensagem, titulo, tipo);
+                await carregarTransferencias();
+                showView('dashboard');
             } else {
-                await showAlert('Nenhum item válido encontrado na planilha. Verifique as colunas "Produto" e "Quantidade_Sugerida".', 'Aviso', 'warning');
+                preencherFormularioComItens(itens);
+                await showAlert(`${itens.length} itens importados para o formulário.`, 'Sucesso', 'success');
             }
-            
         } catch (error) {
-            console.error('Erro ao ler arquivo:', error);
-            await showAlert('Erro ao processar arquivo XLSX. Verifique o formato.', 'Erro', 'danger');
+            console.error('Erro ao ler arquivo XLSX:', error);
+            await showAlert(error.message || 'Erro ao processar arquivo XLSX. Verifique o formato.', 'Erro', 'danger');
+        } finally {
+            fileInputXlsx.value = '';
         }
-        
-        // Limpar input
-        fileInputXlsx.value = '';
     });
+
+    if (btnImportarCsv && fileInputCsv) {
+        btnImportarCsv.addEventListener('click', () => {
+            fileInputCsv.click();
+        });
+
+        fileInputCsv.addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            await processarImportacaoCsv(file);
+        });
+    }
+
+    async function processarImportacaoCsv(file) {
+        try {
+            const base = await obterDadosBaseTransferencia();
+            if (!base) {
+                fileInputCsv.value = '';
+                return;
+            }
+
+            showLoading('Processando CSV...');
+            const conteudo = await file.text();
+            const itens = parseCsvConteudo(conteudo);
+
+            if (itens.length === 0) {
+                hideLoading();
+                await showAlert('Nenhum item válido encontrado no CSV.', 'Aviso', 'warning');
+                fileInputCsv.value = '';
+                return;
+            }
+
+            const itensPorTransferencia = Math.max(1, parseInt(inputItensPorTransferencia?.value, 10) || 50);
+            const lotes = dividirEmLotes(itens, itensPorTransferencia);
+            hideLoading();
+
+            const confirmado = await showConfirm(
+                `Serão criadas ${lotes.length} transferências a partir de ${itens.length} itens, com até ${itensPorTransferencia} item(s) em cada. Deseja continuar?`,
+                'Importação em lote',
+                'warning'
+            );
+
+            if (!confirmado) {
+                fileInputCsv.value = '';
+                return;
+            }
+
+            showLoading('Criando transferências em lote...');
+            const resultado = await criarTransferenciasEmLote(lotes, base);
+            hideLoading();
+
+            let mensagem = `${resultado.sucessos.length} transferência(s) criada(s) com sucesso.`;
+            let titulo = 'Sucesso';
+            let tipo = 'success';
+
+            if (resultado.falhas.length > 0) {
+                titulo = 'Importação parcial';
+                tipo = 'warning';
+                const idsFalhos = resultado.falhas.map(f => f.id).join(', ');
+                mensagem += `\n${resultado.falhas.length} falharam: ${idsFalhos}.`;
+            }
+
+            await showAlert(mensagem, titulo, tipo);
+            await carregarTransferencias();
+            showView('dashboard');
+        } catch (error) {
+            hideLoading();
+            console.error('Erro ao importar CSV:', error);
+            await showAlert(error.message || 'Erro ao processar o CSV. Verifique o formato e tente novamente.', 'Erro', 'danger');
+        } finally {
+            fileInputCsv.value = '';
+        }
+    }
+
+    async function obterDadosBaseTransferencia() {
+        const selectOrigem = document.getElementById('origem');
+        const selectDestino = document.getElementById('destino');
+        const solicitanteInput = document.getElementById('solicitante');
+
+        const origemId = selectOrigem.value;
+        const destinoId = selectDestino.value;
+        const solicitante = solicitanteInput.value.trim();
+
+        if (!origemId || !destinoId) {
+            await showAlert('Selecione as filiais de origem e destino antes de importar o CSV.', 'Campos obrigatórios', 'warning');
+            return null;
+        }
+
+        if (!solicitante) {
+            await showAlert('Informe o nome do solicitante antes de importar o CSV.', 'Campos obrigatórios', 'warning');
+            return null;
+        }
+
+        const origemNome = selectOrigem.options[selectOrigem.selectedIndex]?.text || '';
+        const destinoNome = selectDestino.options[selectDestino.selectedIndex]?.text || '';
+
+        return {
+            origemId: origemId ? parseInt(origemId, 10) : null,
+            destinoId: destinoId ? parseInt(destinoId, 10) : null,
+            origemNome,
+            destinoNome,
+            solicitante
+        };
+    }
+
+    function dividirEmLotes(array, tamanho) {
+        const lotes = [];
+        for (let i = 0; i < array.length; i += tamanho) {
+            lotes.push(array.slice(i, i + tamanho));
+        }
+        return lotes;
+    }
+
+    function parseCsvConteudo(conteudo) {
+        const linhas = conteudo.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        if (linhas.length === 0) return [];
+
+        const delimitador = linhas[0].includes(';') ? ';' : ',';
+        const cabecalho = dividirLinhaCsv(linhas[0], delimitador).map(h => h.replace(/"/g, '').trim().toLowerCase());
+
+        const idxCodigo = cabecalho.findIndex(col => col.includes('codigo'));
+        const idxQuantidade = cabecalho.findIndex(col => col.includes('quant'));
+
+        if (idxCodigo === -1 || idxQuantidade === -1) {
+            throw new Error('Cabeçalho inválido. Certifique-se de que existem colunas para código e quantidade.');
+        }
+
+        const itens = [];
+        for (let i = 1; i < linhas.length; i++) {
+            const valores = dividirLinhaCsv(linhas[i], delimitador);
+            const codigo = (valores[idxCodigo] || '').trim();
+            const quantidadeBruta = (valores[idxQuantidade] || '').replace(',', '.');
+            const quantidade = Math.round(Number(quantidadeBruta));
+
+            if (!codigo || isNaN(quantidade) || quantidade <= 0) continue;
+
+            itens.push({
+                codigo,
+                solicitada: quantidade,
+                atendida: 0
+            });
+        }
+
+        return itens;
+    }
+
+    function dividirLinhaCsv(linha, delimitador) {
+        const valores = [];
+        let atual = '';
+        let emAspas = false;
+
+        for (let i = 0; i < linha.length; i++) {
+            const char = linha[i];
+
+            if (char === '"') {
+                emAspas = !emAspas;
+                continue;
+            }
+
+            if (char === delimitador && !emAspas) {
+                valores.push(atual);
+                atual = '';
+            } else {
+                atual += char;
+            }
+        }
+
+        valores.push(atual);
+        return valores.map(v => v.trim());
+    }
+
+    async function lerItensDeXlsx(file) {
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data);
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+
+        const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        let headerRowIndex = -1;
+        let produtoColIndex = -1;
+        let quantidadeColIndex = -1;
+
+        for (let i = 0; i < rawData.length; i++) {
+            const row = rawData[i] || [];
+            row.forEach((value, index) => {
+                const cell = String(value || '').trim().toLowerCase();
+                const normalized = cell.replace(/\s+/g, '').replace(/_/g, '');
+                if (normalized === 'produto') {
+                    headerRowIndex = i;
+                    produtoColIndex = index;
+                }
+                if (normalized === 'quantidadesugerida' || normalized === 'quantidade') {
+                    quantidadeColIndex = index;
+                }
+            });
+            if (headerRowIndex >= 0 && produtoColIndex >= 0 && quantidadeColIndex >= 0) {
+                break;
+            }
+        }
+
+        if (headerRowIndex < 0 || produtoColIndex < 0 || quantidadeColIndex < 0) {
+            throw new Error('Não foi possível encontrar as colunas "Produto" e "Quantidade_Sugerida" na planilha.');
+        }
+
+        const itens = [];
+        for (let i = headerRowIndex + 1; i < rawData.length; i++) {
+            const row = rawData[i] || [];
+            const codigo = row[produtoColIndex] ? String(row[produtoColIndex]).trim() : '';
+            const quantidadeBruta = row[quantidadeColIndex];
+            const quantidade = Number(String(quantidadeBruta || '').replace(',', '.'));
+
+            if (!codigo || isNaN(quantidade) || quantidade <= 0) continue;
+
+            itens.push({
+                codigo,
+                solicitada: Math.round(quantidade),
+                atendida: 0
+            });
+        }
+
+        return itens;
+    }
+
+    function preencherFormularioComItens(itens) {
+        itensContainer.innerHTML = '';
+        itens.forEach(({ codigo, solicitada }) => {
+            const itemRow = document.createElement('div');
+            itemRow.className = 'item-row';
+            itemRow.innerHTML = `
+                <div class="form-group">
+                    <input type="text" class="item-codigo" required placeholder="Código do produto" value="${codigo}">
+                </div>
+                <div class="form-group">
+                    <input type="number" class="item-quantidade" required min="1" placeholder="Ex: 10" value="${solicitada}">
+                </div>
+                <button type="button" class="btn-remover-item" aria-label="Remover item">
+                    <i data-lucide="trash-2"></i>
+                </button>
+            `;
+            itemRow.querySelector('.btn-remover-item').addEventListener('click', () => itemRow.remove());
+            itensContainer.appendChild(itemRow);
+        });
+        if (itens.length === 0) {
+            adicionarItem();
+        }
+        lucide.createIcons();
+    }
+
+    async function criarTransferenciasEmLote(lotes, base) {
+        const resultado = { sucessos: [], falhas: [] };
+
+        for (let index = 0; index < lotes.length; index++) {
+            const itens = lotes[index];
+            const transferId = generateNewId();
+
+            const payload = {
+                id: transferId,
+                origem: base.origemNome,
+                destino: base.destinoNome,
+                filial_origem_id: base.origemId,
+                filial_destino_id: base.destinoId,
+                solicitante: base.solicitante,
+                tags: [...currentTransferTags],
+                data: new Date().toISOString().split('T')[0],
+                status: 'pendente',
+                itens: itens.map(item => ({ ...item }))
+            };
+
+            try {
+                const response = await apiFetch('/api/transferencias', {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(error.error || 'Erro ao criar transferência');
+                }
+
+                resultado.sucessos.push(transferId);
+            } catch (error) {
+                console.error('Erro ao criar transferência em lote:', error);
+                resultado.falhas.push({ id: transferId, motivo: error.message });
+            }
+        }
+
+        return resultado;
+    }
     
     btnAddTag.addEventListener('click', () => {
         const newTag = tagInput.value.trim();
@@ -1255,6 +1502,17 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     await carregarDadosIniciais();
 
+    async function atualizarTransferenciasSeNecessario(force = false, mostrarLoading = false) {
+        const agora = Date.now();
+        if (
+            force ||
+            !transferenciasCarregadas ||
+            (agora - ultimaAtualizacaoTransferencias) > INTERVALO_ATUALIZACAO_MS
+        ) {
+            await carregarTransferencias(mostrarLoading);
+        }
+    }
+
     // --- Carregar Transferências da API ---
     async function carregarTransferencias(mostrarLoading = false) {
         try {
@@ -1266,6 +1524,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (response.ok) {
                 transferencias = await response.json();
                 transferenciasCarregadas = true;
+                ultimaAtualizacaoTransferencias = Date.now();
                 
                 // Calcular próximo ID baseado no maior sequencial do ano atual
                 const anoAtual = new Date().getFullYear();
@@ -1574,7 +1833,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (e.key === 'Enter') aplicarFiltros();
     });
     if (btnAtualizarTransferencias) {
-        btnAtualizarTransferencias.addEventListener('click', () => carregarTransferencias(true));
+        btnAtualizarTransferencias.addEventListener('click', () => atualizarTransferenciasSeNecessario(true, true));
     }
     
     // Popular filtros quando tags e filiais carregarem
