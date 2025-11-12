@@ -1237,30 +1237,20 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // --- Carregar dados iniciais ---
     async function carregarDadosIniciais() {
-        showLoading('Carregando dados...');
-
-        const tarefas = [
-            carregarFiliais(),
-            carregarTags(),
-            carregarTransferencias()
-        ];
-        const nomesTarefas = ['filiais', 'tags', 'transferencias'];
-        const resultados = await Promise.allSettled(tarefas);
-        const falhas = resultados
-            .map((resultado, index) => resultado.status === 'rejected' ? nomesTarefas[index] : null)
-            .filter(Boolean);
-
-        if (falhas.length === nomesTarefas.length) {
-            await showAlert('Nao foi possivel carregar as informacoes iniciais. Atualize a pagina e tente novamente.', 'Erro', 'danger');
-        } else if (falhas.length > 0) {
-            console.warn('Falhas ao carregar dados iniciais:', falhas);
+        try {
+            showLoading('Carregando dados...');
+            await carregarFiliais();
+            await carregarTags();
+            await carregarTransferencias();
+        } catch (error) {
+            console.error('Erro ao carregar dados iniciais:', error);
+            await showAlert('Erro ao carregar informacoes iniciais. Tente atualizar a pagina.', 'Erro', 'danger');
+        } finally {
+            hideLoading();
+            if (itensContainer.children.length === 0) {
+                adicionarItem();
+            }
         }
-
-        if (itensContainer.children.length === 0) {
-            adicionarItem();
-        }
-
-        hideLoading();
     }
 
     await carregarDadosIniciais();
