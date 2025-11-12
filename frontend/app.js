@@ -226,6 +226,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     let nextId = 1;
     let previousView = 'dashboard';
     let globalTags = ['Urgente', 'Retirar no local', 'Frágil', 'Cliente VIP'];
+    let globalTagsData = [];
     let currentTransferTags = [];
     let editandoRascunhoId = null; // ID do rascunho sendo editado
     let transferenciaEmDetalhe = null;
@@ -1233,6 +1234,37 @@ document.addEventListener('DOMContentLoaded', async function() {
          showView('dashboard');
     });
 
+    
+    // --- Carregar dados iniciais ---
+    async function carregarDadosIniciais() {
+        showLoading('Carregando dados...');
+
+        const tarefas = [
+            carregarFiliais(),
+            carregarTags(),
+            carregarTransferencias()
+        ];
+        const nomesTarefas = ['filiais', 'tags', 'transferencias'];
+        const resultados = await Promise.allSettled(tarefas);
+        const falhas = resultados
+            .map((resultado, index) => resultado.status === 'rejected' ? nomesTarefas[index] : null)
+            .filter(Boolean);
+
+        if (falhas.length === nomesTarefas.length) {
+            await showAlert('Nao foi possivel carregar as informacoes iniciais. Atualize a pagina e tente novamente.', 'Erro', 'danger');
+        } else if (falhas.length > 0) {
+            console.warn('Falhas ao carregar dados iniciais:', falhas);
+        }
+
+        if (itensContainer.children.length === 0) {
+            adicionarItem();
+        }
+
+        hideLoading();
+    }
+
+    await carregarDadosIniciais();
+
     // --- Carregar Transferências da API ---
     async function carregarTransferencias(mostrarLoading = false) {
         try {
@@ -1282,7 +1314,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     // --- Carregar Tags da API ---
-    let globalTagsData = []; // Armazena tags completas com cores
     
     async function carregarTags() {
         try {

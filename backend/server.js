@@ -643,9 +643,14 @@ app.put('/api/transferencias/:id/etapa', verificarToken, async (req, res) => {
         // Atualizar data baseado no status (apenas se as colunas existirem)
         let campoData = null;
         if (hasDateColumns) {
-            if (status === 'em_separacao') campoData = 'data_inicio_separacao';
-            else if (status === 'separado') campoData = 'data_fim_separacao';
-            else if (status === 'recebido' || status === 'concluido') campoData = 'data_recebimento';
+            if (status === 'em_separacao') {
+                campoData = 'data_inicio_separacao';
+            } else if (status === 'separado' || status === 'aguardando_lancamento') {
+                // Status aguardando_lancamento marca o fim da separação no fluxo atual
+                campoData = 'data_fim_separacao';
+            } else if (status === 'recebido' || status === 'concluido') {
+                campoData = 'data_recebimento';
+            }
         }
         
         query = 'UPDATE transferencias SET status = ?';
