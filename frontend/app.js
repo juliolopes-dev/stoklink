@@ -2113,6 +2113,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     const filtroDataOpcao = document.getElementById('filtro-data-opcao');
     const filtroDataPersonalizada = document.getElementById('filtro-data-personalizada');
     const filtroProduto = document.getElementById('filtro-produto');
+    const filtroNumeroInterno = document.getElementById('filtro-numero-interno');
     const filtroMinhaFilial = document.getElementById('filtro-minha-filial');
     const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
     const btnLimparFiltros = document.getElementById('btn-limpar-filtros');
@@ -2176,6 +2177,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const destinoSelecionado = filtroDestino.value.toLowerCase();
         const statusSelecionado = filtroStatus ? filtroStatus.value : '';
         const produtoDigitado = (filtroProduto.value || '').toLowerCase().trim();
+        const numeroInternoDigitado = (filtroNumeroInterno.value || '').toLowerCase().trim();
         const apenasMinhaFilial = filtroMinhaFilial && filtroMinhaFilial.checked && minhaFilialNome;
         const dataOpcao = filtroDataOpcao ? filtroDataOpcao.value : '';
         const dataPersonalizada = filtroDataPersonalizada ? filtroDataPersonalizada.value : '';
@@ -2225,6 +2227,13 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (produtoDigitado && (!t.itens || !t.itens.some(item => 
                 (item.codigo || '').toLowerCase().includes(produtoDigitado)))) {
                 return false;
+            }
+
+            if (numeroInternoDigitado) {
+                const numeroInternoLower = (t.numeroTransferenciaInterna || t.numero_transferencia_interna || '-').toString().toLowerCase();
+                if (!numeroInternoLower.includes(numeroInternoDigitado)) {
+                    return false;
+                }
             }
             
             return true;
@@ -2309,6 +2318,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         filtroOrigem.value = '';
         filtroDestino.value = '';
         filtroProduto.value = '';
+        if (filtroNumeroInterno) {
+            filtroNumeroInterno.value = '';
+        }
         if (filtroStatus) {
             filtroStatus.value = '';
         }
@@ -2355,6 +2367,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     filtroProduto.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') aplicarFiltros();
     });
+    if (filtroNumeroInterno) {
+        filtroNumeroInterno.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') aplicarFiltros();
+        });
+        filtroNumeroInterno.addEventListener('change', aplicarFiltros);
+    }
     if (btnAtualizarTransferencias) {
         btnAtualizarTransferencias.addEventListener('click', () => atualizarTransferenciasSeNecessario(true, true));
     }
