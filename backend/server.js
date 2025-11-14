@@ -273,9 +273,11 @@ app.get('/api/transferencias', verificarToken, async (req, res) => {
         const empresa_id = req.usuario.empresa_id;
         
         const [transferencias] = await db.query(`
-            SELECT * FROM transferencias 
-            WHERE empresa_id = ?
-            ORDER BY data_criacao DESC
+            SELECT t.*, u.nome as usuario_nome
+            FROM transferencias t
+            LEFT JOIN usuarios u ON t.usuario_id = u.id
+            WHERE t.empresa_id = ?
+            ORDER BY COALESCE(t.updated_at, t.data_fim_separacao, t.data_criacao) DESC
         `, [empresa_id]);
 
         // Para cada transferência, buscar itens e tags
@@ -308,7 +310,13 @@ app.get('/api/transferencias', verificarToken, async (req, res) => {
 // GET - Buscar transferência por ID
 app.get('/api/transferencias/:id', verificarToken, async (req, res) => {
     try {
-        const [rows] = await db.query('SELECT * FROM transferencias WHERE id = ?', [req.params.id]);
+        const [rows] = await db.query(`
+            SELECT t.*, u.nome as usuario_nome
+            FROM transferencias t
+            LEFT JOIN usuarios u ON t.usuario_id = u.id
+            WHERE t.id = ?
+            ORDER BY COALESCE(t.updated_at, t.data_fim_separacao, t.data_criacao) DESC
+        `, [req.params.id]);
         
         if (rows.length === 0) {
             return res.status(404).json({ error: 'Transferência não encontrada' });
@@ -453,15 +461,17 @@ app.post('/api/transferencias', verificarToken, async (req, res) => {
 app.put('/api/transferencias/:id', verificarToken, async (req, res) => {
     const { origem, destino, filial_origem_id, filial_destino_id, solicitante, tags, itens } = req.body;
     const id = req.params.id;
+    const usuarioId = req.usuario.id;
+    const empresaUsuarioId = req.usuario.empresa_id;
     
     const connection = await db.getConnection();
     
     try {
         await connection.beginTransaction();
         
-        // Verificar se é um rascunho
+        // Verificar status e proprietário
         const [transf] = await connection.query(
-            'SELECT status FROM transferencias WHERE id = ?',
+            'SELECT status, usuario_id, empresa_id FROM transferencias WHERE id = ?',
             [id]
         );
         
@@ -469,10 +479,20 @@ app.put('/api/transferencias/:id', verificarToken, async (req, res) => {
             await connection.rollback();
             return res.status(404).json({ error: 'Transferência não encontrada' });
         }
-        
-        if (transf[0].status !== 'rascunho') {
+
+        const transferencia = transf[0];
+
+        if (transferencia.empresa_id !== empresaUsuarioId) {
             await connection.rollback();
-            return res.status(400).json({ error: 'Apenas rascunhos podem ser editados' });
+            return res.status(403).json({ error: 'Você não tem permissão para editar esta transferência' });
+        }
+
+        const isRascunho = transferencia.status === 'rascunho';
+        const isPendenteDoCriador = transferencia.status === 'pendente' && transferencia.usuario_id === usuarioId;
+
+        if (!isRascunho && !isPendenteDoCriador) {
+            await connection.rollback();
+            return res.status(403).json({ error: 'Apenas rascunhos ou transferências pendentes criadas por você podem ser editadas' });
         }
         
         // Atualizar transferência
@@ -531,11 +551,11 @@ app.put('/api/transferencias/:id', verificarToken, async (req, res) => {
         }
         
         await connection.commit();
-        res.json({ message: 'Rascunho atualizado com sucesso' });
+        res.json({ message: 'Transferência atualizada com sucesso' });
     } catch (error) {
         await connection.rollback();
-        console.error('Erro ao atualizar rascunho:', error);
-        res.status(500).json({ error: 'Erro ao atualizar rascunho' });
+        console.error('Erro ao atualizar transferência:', error);
+        res.status(500).json({ error: 'Erro ao atualizar transferência' });
     } finally {
         connection.release();
     }
@@ -611,10 +631,10 @@ app.put('/api/transferencias/:id/itens', verificarToken, async (req, res) => {
 
 // PUT - Atualizar etapa/status da transferência
 app.put('/api/transferencias/:id/etapa', verificarToken, async (req, res) => {
-    const { status } = req.body;
+    const { status, observacao_recebimento, adicionarTagDivergencia } = req.body;
     const id = req.params.id;
     
-    let query = ''; // Declarar fora do try para acessar no catch
+    let query = '';
     let params = [];
     
     try {
@@ -623,30 +643,26 @@ app.put('/api/transferencias/:id/etapa', verificarToken, async (req, res) => {
             return res.status(acesso.status).json({ error: acesso.mensagem });
         }
 
-        // Validar status
         const statusValidos = ['aguardando_separacao', 'em_separacao', 'separado', 'aguardando_lancamento', 'recebido', 'concluido', 'cancelado'];
         if (!statusValidos.includes(status)) {
             return res.status(400).json({ error: 'Status inválido' });
         }
         
-        // Verificar se as colunas de data existem
         const [columns] = await db.query(`
             SELECT COLUMN_NAME 
             FROM INFORMATION_SCHEMA.COLUMNS 
             WHERE TABLE_NAME = 'transferencias' 
-            AND TABLE_SCHEMA = DATABASE()
+              AND TABLE_SCHEMA = DATABASE()
         `);
         
         const columnNames = columns.map(c => c.COLUMN_NAME);
         const hasDateColumns = columnNames.includes('data_inicio_separacao');
         
-        // Atualizar data baseado no status (apenas se as colunas existirem)
         let campoData = null;
         if (hasDateColumns) {
             if (status === 'em_separacao') {
                 campoData = 'data_inicio_separacao';
             } else if (status === 'separado' || status === 'aguardando_lancamento') {
-                // Status aguardando_lancamento marca o fim da separação no fluxo atual
                 campoData = 'data_fim_separacao';
             } else if (status === 'recebido' || status === 'concluido') {
                 campoData = 'data_recebimento';
@@ -655,17 +671,67 @@ app.put('/api/transferencias/:id/etapa', verificarToken, async (req, res) => {
         
         query = 'UPDATE transferencias SET status = ?';
         params = [status];
+
+        let deveAtualizarObservacao = false;
+        let observacaoNormalizada = null;
+        if (status === 'recebido' && typeof observacao_recebimento !== 'undefined') {
+            deveAtualizarObservacao = true;
+            if (typeof observacao_recebimento === 'string') {
+                const texto = observacao_recebimento.trim();
+                observacaoNormalizada = texto.length > 0 ? texto : null;
+            } else if (observacao_recebimento === null) {
+                observacaoNormalizada = null;
+            }
+        }
         
         if (campoData) {
             query += `, ${campoData} = NOW()`;
+        }
+
+        if (deveAtualizarObservacao) {
+            query += ', observacao_recebimento = ?';
+            params.push(observacaoNormalizada);
         }
         
         query += ' WHERE id = ?';
         params.push(id);
         
-        console.log('🔄 Atualizando status:', { id, status, query, params, hasDateColumns });
+        console.log('🛠️ Atualizando status:', { id, status, query, params, hasDateColumns });
         
         await db.query(query, params);
+
+        if (status === 'recebido' && adicionarTagDivergencia) {
+            const empresaId = req.usuario.empresa_id;
+            const tagNome = 'Divergencia';
+
+            let [tagRows] = await db.query(
+                'SELECT id FROM tags WHERE nome = ? AND empresa_id = ?',
+                [tagNome, empresaId]
+            );
+            let tagId;
+
+            if (tagRows.length === 0) {
+                const [result] = await db.query(
+                    'INSERT INTO tags (nome, empresa_id) VALUES (?, ?)',
+                    [tagNome, empresaId]
+                );
+                tagId = result.insertId;
+            } else {
+                tagId = tagRows[0].id;
+            }
+
+            const [relacao] = await db.query(
+                'SELECT 1 FROM transferencia_tags WHERE transferencia_id = ? AND tag_id = ?',
+                [id, tagId]
+            );
+
+            if (relacao.length === 0) {
+                await db.query(
+                    'INSERT INTO transferencia_tags (transferencia_id, tag_id) VALUES (?, ?)',
+                    [id, tagId]
+                );
+            }
+        }
         
         console.log('✅ Status atualizado com sucesso');
         res.json({ message: 'Status atualizado com sucesso', status });
@@ -676,7 +742,6 @@ app.put('/api/transferencias/:id/etapa', verificarToken, async (req, res) => {
         res.status(500).json({ error: 'Erro ao atualizar status', detalhes: error.message });
     }
 });
-
 // PUT - Finalizar transferência (adicionar número interno)
 app.put('/api/transferencias/:id/finalizar', verificarToken, async (req, res) => {
     const { numeroTransferenciaInterna } = req.body;
@@ -697,6 +762,29 @@ app.put('/api/transferencias/:id/finalizar', verificarToken, async (req, res) =>
         res.status(500).json({ error: 'Erro ao finalizar transferência' });
     }
 });
+
+// DELETE - Excluir transferência (somente administradores)
+app.delete('/api/transferencias/:id', verificarToken, verificarRole('admin'), async (req, res) => {
+    const { id } = req.params;
+    const empresa_id = req.usuario.empresa_id;
+    
+    try {
+        const [result] = await db.query(
+            'DELETE FROM transferencias WHERE id = ? AND empresa_id = ?',
+            [id, empresa_id]
+        );
+        
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ error: 'Transferência não encontrada' });
+        }
+        
+        res.json({ message: 'Transferência excluída com sucesso' });
+    } catch (error) {
+        console.error('Erro ao excluir transferência:', error);
+        res.status(500).json({ error: 'Erro ao excluir transferência' });
+    }
+});
+
 
 // ========================================
 // ROTAS DE FILIAIS

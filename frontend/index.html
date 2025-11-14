@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
@@ -41,7 +41,13 @@
                 <div class="card summary-card lancamento"><h3>AGUARDANDO LANÇAMENTO</h3><div id="summary-lancamento" class="summary-count">0</div></div>
             </div>
             <div class="card">
-                <div class="card-header"><i data-lucide="archive"></i>Transferências Ativas Recentes</div>
+                <div class="card-header" style="justify-content: space-between; align-items: center; gap: 15px;">
+                    <div><i data-lucide="archive"></i>Transferências Ativas Recentes</div>
+                    <div class="form-group" style="margin: 0; min-width: 200px;">
+                        <label for="dashboard-status-filter" style="font-size: 13px; color: #6c757d;">Status</label>
+                        <select id="dashboard-status-filter"></select>
+                    </div>
+                </div>
                 <div id="dashboard-transfer-list" class="scrollable-list"></div>
             </div>
         </div>
@@ -62,8 +68,7 @@
                         <label>Tags</label>
                         <div id="selected-tags-container" class="tags-container" style="margin-bottom: 10px;"></div>
                         <div class="add-tag-wrapper">
-                            <input type="text" id="tag-input" list="predefined-tags" placeholder="Digite ou selecione uma tag">
-                            <datalist id="predefined-tags"></datalist>
+                            <select id="tag-input" placeholder="Selecione uma tag"></select>
                             <button type="button" id="btn-add-tag" class="btn btn-secondary"><i data-lucide="plus"></i></button>
                         </div>
                     </div>
@@ -78,11 +83,23 @@
                                 Itens por transferência:
                                 <input type="number" id="input-itens-por-transferencia" min="1" value="50" style="width: 80px; padding: 6px 8px; border: 1px solid #d1d5db; border-radius: 6px;">
                             </label>
-                            <button type="button" class="btn btn-primary" id="btn-add-item"><i data-lucide="plus"></i> Adicionar Item</button>
                         </div>
                     </div>
                     <input type="file" id="file-input-xlsx" accept=".xlsx,.xls" style="display: none;">
                     <input type="file" id="file-input-csv" accept=".csv" style="display: none;">
+                    <div class="item-entry-form">
+                        <div class="form-group">
+                            <label for="novo-item-codigo">Código do Produto *</label>
+                            <input type="text" id="novo-item-codigo" placeholder="Ex: 12345">
+                        </div>
+                        <div class="form-group">
+                            <label for="novo-item-quantidade">Qtd. Solicitada *</label>
+                            <input type="number" id="novo-item-quantidade" min="1">
+                        </div>
+                        <div class="form-group" style="align-self: flex-end;">
+                            <button type="button" class="btn btn-primary" id="btn-add-item"><i data-lucide="plus"></i> Adicionar</button>
+                        </div>
+                    </div>
                     <div class="itens-table-wrapper">
                         <div class="itens-table-header">
                             <span>Código do Produto *</span>
@@ -128,6 +145,23 @@
                         </select>
                     </div>
                     <div class="form-group">
+                        <label for="filtro-status">Status</label>
+                        <select id="filtro-status">
+                            <option value="">Todos os Status</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="filtro-data-opcao">Data</label>
+                        <div class="date-filter-wrapper">
+                            <select id="filtro-data-opcao">
+                                <option value="">Todas as Datas</option>
+                                <option value="hoje">Hoje</option>
+                                <option value="personalizada">Selecionar data</option>
+                            </select>
+                            <input type="date" id="filtro-data-personalizada" style="display: none;">
+                        </div>
+                    </div>
+                    <div class="form-group">
                         <label for="filtro-produto">Código do Produto</label>
                         <input type="text" id="filtro-produto" placeholder="Digite o código do produto">
                     </div>
@@ -167,9 +201,11 @@
                     <div class="info-item"><strong>Origem:</strong> <span id="detalhe-origem"></span></div>
                     <div class="info-item"><strong>Destino:</strong> <span id="detalhe-destino"></span></div>
                     <div class="info-item"><strong>Solicitante:</strong> <span id="detalhe-solicitante"></span></div>
+                    <div class="info-item"><strong>Criado por:</strong> <span id="detalhe-criado-por"></span></div>
                     <div class="info-item"><strong>Data:</strong> <span id="detalhe-data"></span></div>
                     <div class="info-item" id="detalhe-interno-wrapper" style="display: none;"><strong>Nº Transf. Interna:</strong> <span id="detalhe-interno"></span></div>
                     <div class="info-item" id="detalhe-obs-wrapper" style="display: none;"><strong>Tags:</strong><div id="detalhe-observacao" class="tags-container"></div></div>
+                    <div class="info-item" id="detalhe-obs-recebimento-wrapper" style="display: none;"><strong>Obs. Recebimento:</strong> <span id="detalhe-observacao-recebimento"></span></div>
                  </div>
             </div>
             <div class="card" id="detalhe-timeline-card" style="display: none;">
@@ -233,6 +269,30 @@
         </div>
     </div>
 
+    <!-- Modal de Recebimento -->
+    <div id="recebimento-modal" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <div class="modal-icon info">ℹ</div>
+                <h3>Registrar Recebimento</h3>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="recebimento-observacao">Observação (opcional)</label>
+                    <textarea id="recebimento-observacao" rows="4" placeholder="Descreva divergências ou ocorrências no recebimento"></textarea>
+                </div>
+                <label class="checkbox-inline">
+                    <input type="checkbox" id="recebimento-divergencia">
+                    Adicionar tag <strong>Divergência</strong>
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="recebimento-btn-cancelar">Cancelar</button>
+                <button class="btn btn-primary" id="recebimento-btn-confirmar"><i data-lucide="check-circle"></i> Confirmar Recebimento</button>
+            </div>
+        </div>
+    </div>
+
     <div id="loading-overlay" class="loading-overlay">
         <div class="loading-card">
             <div class="loading-spinner">
@@ -249,3 +309,4 @@
     <script src="app.js"></script>
 </body>
 </html>
+

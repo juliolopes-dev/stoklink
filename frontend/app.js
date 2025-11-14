@@ -1,4 +1,4 @@
-// ====================================
+﻿// ====================================
 // CONFIGURAÇÃO DA API
 // ====================================
 
@@ -94,6 +94,14 @@ function showAlert(message, title = 'Aviso', type = 'info') {
     });
 }
 
+let recebimentoModal;
+let recebimentoObservacaoInput;
+let recebimentoDivergenciaInput;
+let recebimentoBtnConfirmar;
+let recebimentoBtnCancelar;
+let formularioAlterado = false;
+let bloquearDeteccaoAlteracoes = false;
+
 function showConfirm(message, title = 'Confirmação', type = 'warning') {
     return new Promise((resolve) => {
         const modal = document.getElementById('custom-modal');
@@ -146,6 +154,64 @@ function showConfirm(message, title = 'Confirmação', type = 'warning') {
     });
 }
 
+function solicitarDadosRecebimento() {
+    if (!recebimentoModal) {
+        return Promise.resolve({ observacao: '', adicionarDivergencia: false });
+    }
+
+    return new Promise((resolve) => {
+        const modal = recebimentoModal;
+        const campoObservacao = recebimentoObservacaoInput;
+        const checkboxDivergencia = recebimentoDivergenciaInput;
+        const btnConfirmar = recebimentoBtnConfirmar;
+        const btnCancelar = recebimentoBtnCancelar;
+
+        if (campoObservacao) campoObservacao.value = '';
+        if (checkboxDivergencia) checkboxDivergencia.checked = false;
+        modal.classList.add('show');
+
+        const cleanup = () => {
+            modal.classList.remove('show');
+            if (btnConfirmar) btnConfirmar.removeEventListener('click', handleConfirm);
+            if (btnCancelar) btnCancelar.removeEventListener('click', handleCancel);
+            modal.removeEventListener('click', handleBackdrop);
+        };
+
+        const handleConfirm = () => {
+            const observacao = campoObservacao ? campoObservacao.value.trim() : '';
+            const adicionar = checkboxDivergencia ? checkboxDivergencia.checked : false;
+            cleanup();
+            resolve({ observacao, adicionarDivergencia: adicionar });
+        };
+
+        const handleCancel = () => {
+            cleanup();
+            resolve(null);
+        };
+
+        const handleBackdrop = (event) => {
+            if (event.target === modal) {
+                cleanup();
+                resolve(null);
+            }
+        };
+
+        if (btnConfirmar) btnConfirmar.addEventListener('click', handleConfirm);
+        if (btnCancelar) btnCancelar.addEventListener('click', handleCancel);
+        modal.addEventListener('click', handleBackdrop);
+    });
+}
+
+function marcarFormularioAlterado() {
+    if (!bloquearDeteccaoAlteracoes) {
+        formularioAlterado = true;
+    }
+}
+
+function resetFormularioAlterado() {
+    formularioAlterado = false;
+}
+
 // ====================================
 // CÓDIGO PRINCIPAL
 // ====================================
@@ -190,8 +256,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         const btnAdmin = document.getElementById('btn-admin');
         if (btnAdmin) {
             btnAdmin.style.display = 'flex';
-            btnAdmin.addEventListener('click', () => {
-                window.location.href = 'admin.html';
+            btnAdmin.addEventListener('click', async () => {
+                if (await confirmarSaidaCadastro()) {
+                    window.location.href = 'admin.html';
+                }
             });
         }
     }
@@ -203,22 +271,52 @@ document.addEventListener('DOMContentLoaded', async function() {
         visualizacao: document.getElementById('visualizacao-view'), 
         detalhe: document.getElementById('detalhe-view'),
     };
+    async function confirmarSaidaCadastro() {
+        const cadastroVisivel = views.cadastro && views.cadastro.style.display !== 'none';
+        if (!cadastroVisivel || !formularioAlterado) return true;
+        return await showConfirm(
+            'Existem alterações não salvas. Deseja sair mesmo assim?',
+            'Alterações não salvas',
+            'warning'
+        );
+    }
     const navButtons = { 
         dashboard: document.getElementById('btn-show-dashboard'), 
         cadastro: document.getElementById('btn-show-cadastro'), 
         visualizacao: document.getElementById('btn-show-visualizacao'),
     };
+    window.addEventListener('beforeunload', (event) => {
+        const cadastroVisivel = views.cadastro && views.cadastro.style.display !== 'none';
+        if (cadastroVisivel && formularioAlterado) {
+            event.preventDefault();
+            event.returnValue = '';
+        }
+    });
     const form = document.getElementById('transfer-form');
     const btnAddItem = document.getElementById('btn-add-item');
     const btnSalvarRascunho = document.getElementById('btn-salvar-rascunho');
+    const btnSubmitFormulario = form ? form.querySelector('button[type="submit"]') : null;
     const itensContainer = document.getElementById('itens-container');
     const transferListContainer = document.getElementById('transfer-list-container');
     const dashboardTransferList = document.getElementById('dashboard-transfer-list');
     const btnVoltarLista = document.getElementById('btn-voltar-lista');
+    recebimentoModal = document.getElementById('recebimento-modal');
+    recebimentoObservacaoInput = document.getElementById('recebimento-observacao');
+    recebimentoDivergenciaInput = document.getElementById('recebimento-divergencia');
+    recebimentoBtnConfirmar = document.getElementById('recebimento-btn-confirmar');
+    recebimentoBtnCancelar = document.getElementById('recebimento-btn-cancelar');
+    if (form) {
+        form.addEventListener('input', marcarFormularioAlterado);
+        form.addEventListener('change', marcarFormularioAlterado);
+    }
     const tagInput = document.getElementById('tag-input');
     const btnAddTag = document.getElementById('btn-add-tag');
     const selectedTagsContainer = document.getElementById('selected-tags-container');
     const tagDatalist = document.getElementById('predefined-tags');
+    const dashboardStatusFilter = document.getElementById('dashboard-status-filter');
+    const filtroStatus = document.getElementById('filtro-status');
+    const novoItemCodigo = document.getElementById('novo-item-codigo');
+    const novoItemQuantidade = document.getElementById('novo-item-quantidade');
 
     // --- Armazenamento de Dados ---
     let transferencias = [];
@@ -228,10 +326,21 @@ document.addEventListener('DOMContentLoaded', async function() {
     let globalTags = ['Urgente', 'Retirar no local', 'Frágil', 'Cliente VIP'];
     let globalTagsData = [];
     let currentTransferTags = [];
-    let editandoRascunhoId = null; // ID do rascunho sendo editado
+    let editandoRascunhoId = null; // ID do rascunho/transferência sendo editado
+    let modoEdicaoTransferencia = null; // null | 'rascunho' | 'pendente'
+    const salvarRascunhoDisplayPadrao = btnSalvarRascunho ? (btnSalvarRascunho.style.display || 'inline-flex') : null;
     let transferenciaEmDetalhe = null;
     let ultimaAtualizacaoTransferencias = 0;
     const INTERVALO_ATUALIZACAO_MS = 60 * 1000; // 1 minuto
+    const STATUS_FILTER_OPTIONS = [
+        { value: '', label: 'Todos os Status' },
+        { value: 'rascunho', label: 'Rascunho' },
+        { value: 'pendente', label: 'Pendente' },
+        { value: 'em_separacao', label: 'Em Separação' },
+        { value: 'aguardando_lancamento', label: 'Aguardando Lançamento' },
+        { value: 'concluido', label: 'Recebimento Pendente' }
+    ];
+    const DASHBOARD_STATUS_ALLOWED = ['', 'rascunho', 'pendente', 'em_separacao', 'aguardando_lancamento', 'concluido'];
     const loadingOverlay = document.getElementById('loading-overlay');
     const loadingText = document.getElementById('loading-text');
 
@@ -285,10 +394,13 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // --- Funções de Renderização de Tags ---
     function populateDatalist() {
-        tagDatalist.innerHTML = '';
-        globalTags.forEach(tag => {
-            tagDatalist.innerHTML += `<option value="${tag}">`;
-        });
+        if (tagDatalist) {
+            tagDatalist.innerHTML = '';
+            globalTags.forEach(tag => {
+                tagDatalist.innerHTML += `<option value="${tag}">`;
+            });
+        }
+        preencherSelectTags();
     }
     function renderTags(tagsArray) {
         if (!tagsArray || tagsArray.length === 0) return '';
@@ -306,28 +418,141 @@ document.addEventListener('DOMContentLoaded', async function() {
             tagEl.className = 'tag-item';
             tagEl.style.background = cor;
             tagEl.style.color = 'white';
-            tagEl.textContent = tag;
             
-            const removeEl = document.createElement('i');
-            removeEl.className = 'remove-tag';
-            removeEl.setAttribute('data-lucide', 'x');
-            removeEl.style.width = '16px';
-            removeEl.style.height = '16px';
+            const label = document.createElement('span');
+            label.textContent = tag;
+            tagEl.appendChild(label);
 
+            const removeEl = document.createElement('button');
+            removeEl.className = 'remove-tag-btn';
+            removeEl.type = 'button';
+            removeEl.textContent = '×';
+            removeEl.setAttribute('aria-label', `Remover ${tag}`);
             removeEl.onclick = () => {
                 currentTransferTags.splice(index, 1);
                 renderFormTags();
+                marcarFormularioAlterado();
             };
+
             tagEl.appendChild(removeEl);
             selectedTagsContainer.appendChild(tagEl);
         });
         lucide.createIcons();
     }
 
+    function atualizarEstadoFormularioEdicao() {
+        if (!btnSubmitFormulario) return;
+        if (modoEdicaoTransferencia === 'pendente') {
+            btnSubmitFormulario.innerHTML = '<i data-lucide="save"></i> Salvar Alterações';
+            if (btnSalvarRascunho) {
+                btnSalvarRascunho.style.display = 'none';
+            }
+        } else {
+            btnSubmitFormulario.innerHTML = '<i data-lucide="send"></i> Enviar Solicitação';
+            if (btnSalvarRascunho && salvarRascunhoDisplayPadrao !== null) {
+                btnSalvarRascunho.style.display = salvarRascunhoDisplayPadrao;
+            }
+        }
+        lucide.createIcons();
+    }
+
+    function limparModoEdicaoTransferencia() {
+        editandoRascunhoId = null;
+        modoEdicaoTransferencia = null;
+        atualizarEstadoFormularioEdicao();
+        resetFormularioAlterado();
+    }
+
+    function preencherFormularioTransferencia(t) {
+        bloquearDeteccaoAlteracoes = true;
+        const selectOrigem = document.getElementById('origem');
+        const selectDestino = document.getElementById('destino');
+
+        if (t.filial_origem_id) {
+            selectOrigem.value = t.filial_origem_id;
+        } else {
+            const optionOrigem = Array.from(selectOrigem.options).find(opt => opt.text === t.origem);
+            if (optionOrigem) selectOrigem.value = optionOrigem.value;
+        }
+
+        if (t.filial_destino_id) {
+            selectDestino.value = t.filial_destino_id;
+        } else {
+            const optionDestino = Array.from(selectDestino.options).find(opt => opt.text === t.destino);
+            if (optionDestino) selectDestino.value = optionDestino.value;
+        }
+
+        document.getElementById('solicitante').value = t.solicitante;
+
+        currentTransferTags = [...(t.tags || [])];
+        renderFormTags();
+
+        itensContainer.innerHTML = '';
+        t.itens.forEach(item => adicionarItem(item.codigo, item.solicitada));
+        lucide.createIcons();
+        bloquearDeteccaoAlteracoes = false;
+        resetFormularioAlterado();
+    }
+
+    function iniciarEdicaoTransferencia(transferencia, modo) {
+        if (!transferencia) return;
+        modoEdicaoTransferencia = modo;
+        editandoRascunhoId = transferencia.id;
+        preencherFormularioTransferencia(transferencia);
+        atualizarEstadoFormularioEdicao();
+        showView('cadastro');
+    }
+
+    function editarTransferenciaPendente(transferId) {
+        const t = transferencias.find(tr => tr.id === transferId);
+        if (!t) {
+            showAlert('Transferência não encontrada', 'Erro', 'danger');
+            return;
+        }
+        iniciarEdicaoTransferencia(t, 'pendente');
+        showAlert(
+            'Você está editando esta transferência pendente. Ao salvar, o status permanecerá pendente.',
+            'Editando Transferência',
+            'info'
+        );
+    }
+
+    async function excluirTransferencia(transferId) {
+        const confirmar = await showConfirm(
+            'Excluir esta transferência removerá todos os itens vinculados. Deseja continuar?',
+            'Confirmar exclusão',
+            'danger'
+        );
+        if (!confirmar) return;
+
+        try {
+            const response = await apiFetch(`/api/transferencias/${transferId}`, {
+                method: 'DELETE'
+            });
+
+            if (response.ok) {
+                await showAlert('Transferência excluída com sucesso.', 'Excluída', 'success');
+                await carregarTransferencias(true);
+                previousView = 'visualizacao';
+                showView('visualizacao');
+                aplicarFiltros();
+            } else {
+                const error = await response.json();
+                await showAlert(error.error || 'Erro ao excluir transferência', 'Erro', 'danger');
+            }
+        } catch (error) {
+            console.error('Erro ao excluir transferência:', error);
+            await showAlert('Erro de conexão com o servidor', 'Erro', 'danger');
+        }
+    }
+
+    atualizarEstadoFormularioEdicao();
+
     // --- Funções de Renderização Principal ---
-    function renderTransferList(container, filterFn) {
+    function renderTransferList(container, filterFn, dataset = null) {
         container.innerHTML = '';
-        const data = filterFn ? transferencias.filter(filterFn) : transferencias;
+        const base = dataset || transferencias;
+        const data = filterFn ? base.filter(filterFn) : base;
         if (data.length === 0) { 
             container.innerHTML = '<p>Nenhuma transferência encontrada.</p>'; 
             return; 
@@ -344,6 +569,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                     <th>Origem</th>
                     <th>Destino</th>
                     <th>Solicitante</th>
+                    <th>Criado por</th>
                     <th>Nº Interno</th>
                     <th>Status</th>
                     <th>Itens</th>
@@ -372,6 +598,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 <td>${t.origem}</td>
                 <td>${t.destino}</td>
                 <td>${t.solicitante}</td>
+                <td>${t.usuario_nome || '-'}</td>
                 <td>${numeroInterno}</td>
                 <td><span class="status-tag ${statusInfo.className}">${statusInfo.text}</span></td>
                 <td><span class="badge badge-light">${labelItens}</span></td>
@@ -398,7 +625,27 @@ document.addEventListener('DOMContentLoaded', async function() {
         animateCountUp(document.getElementById('summary-pendente'), pendentes);
         animateCountUp(document.getElementById('summary-separacao'), separacao);
         animateCountUp(document.getElementById('summary-lancamento'), lancamento);
-        renderTransferList(dashboardTransferList, t => t.status !== 'recebido' && t.status !== 'concluido');
+        renderDashboardList();
+    }
+
+    function ordenarPorAtualizacao(lista) {
+        return [...lista].sort((a, b) => {
+            const dataA = new Date(a.data_atualizacao || a.data_fim_separacao || a.data_criacao || 0);
+            const dataB = new Date(b.data_atualizacao || b.data_fim_separacao || b.data_criacao || 0);
+            return dataB - dataA;
+        });
+    }
+
+    function renderDashboardList() {
+        const filtroStatusDashboard = dashboardStatusFilter ? dashboardStatusFilter.value : '';
+        const ordenadas = ordenarPorAtualizacao(transferencias);
+        const filtered = ordenadas.filter(t => {
+            const ativo = t.status !== 'recebido' && t.status !== 'concluido';
+            if (!ativo) return false;
+            if (filtroStatusDashboard && t.status !== filtroStatusDashboard) return false;
+            return true;
+        });
+        renderTransferList(dashboardTransferList, null, filtered);
     }
     function showDetalhes(transferId) {
         const t = transferencias.find(transf => transf.id === transferId); 
@@ -422,11 +669,14 @@ document.addEventListener('DOMContentLoaded', async function() {
             usuarioFilialId &&
             (usuarioFilialId === t.filial_origem_id || usuarioFilialId === t.filial_destino_id)
         );
+        const usuarioEhCriador = usuario?.id ? Number(usuario.id) === Number(t.usuario_id) : false;
+        const usuarioEhAdmin = usuario?.role === 'admin';
         document.getElementById('detalhe-id').textContent = t.id;
         document.getElementById('detalhe-status-tag').innerHTML = `<span class="status-tag ${statusInfo.className}">${statusInfo.text}</span>`;
         document.getElementById('detalhe-origem').textContent = t.origem;
         document.getElementById('detalhe-destino').textContent = t.destino;
         document.getElementById('detalhe-solicitante').textContent = t.solicitante;
+        document.getElementById('detalhe-criado-por').textContent = t.usuario_nome || '-';
         document.getElementById('detalhe-data').textContent = formatarData(t.data_criacao);
         const wrapperInterno = document.getElementById('detalhe-interno-wrapper');
         if (t.status === 'concluido') { 
@@ -441,6 +691,15 @@ document.addEventListener('DOMContentLoaded', async function() {
             document.getElementById('detalhe-observacao').innerHTML = renderTags(t.tags);
         } else { 
             wrapperObs.style.display = 'none'; 
+        }
+        const wrapperObsReceb = document.getElementById('detalhe-obs-recebimento-wrapper');
+        if (wrapperObsReceb) {
+            if (t.observacao_recebimento) {
+                wrapperObsReceb.style.display = 'block';
+                document.getElementById('detalhe-observacao-recebimento').textContent = t.observacao_recebimento;
+            } else {
+                wrapperObsReceb.style.display = 'none';
+            }
         }
         const itensLista = document.getElementById('detalhe-itens-lista');
         itensLista.innerHTML = '';
@@ -510,6 +769,30 @@ document.addEventListener('DOMContentLoaded', async function() {
                     }
                 };
                 acoesContainer.appendChild(btnEnviar);
+            } else if (t.status === 'pendente') {
+                const acoesLinha = document.createElement('div');
+                acoesLinha.style.display = 'flex';
+                acoesLinha.style.gap = '10px';
+                acoesLinha.style.flexWrap = 'wrap';
+
+                if (usuarioEhCriador) {
+                    const btnEditar = document.createElement('button');
+                    btnEditar.className = 'btn btn-secondary';
+                    btnEditar.innerHTML = '<i data-lucide="edit"></i> Editar Transferência';
+                    btnEditar.onclick = () => editarTransferenciaPendente(t.id);
+                    acoesLinha.appendChild(btnEditar);
+                }
+
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-info';
+                btn.innerHTML = '<i data-lucide="play"></i> Iniciar Separação';
+                btn.onclick = async () => {
+                    await atualizarEtapa(t.id, 'em_separacao');
+                    await showAlert('Separação iniciada!', 'Sucesso', 'success');
+                };
+                acoesLinha.appendChild(btn);
+
+                acoesContainer.appendChild(acoesLinha);
             } else if (t.status === 'aguardando_separacao') {
                 const btn = document.createElement('button');
                 btn.className = 'btn btn-info'; 
@@ -547,15 +830,13 @@ document.addEventListener('DOMContentLoaded', async function() {
                     btnReceber.className = 'btn btn-success';
                     btnReceber.innerHTML = '<i data-lucide="check-circle"></i> Marcar como Recebido';
                     btnReceber.onclick = async () => {
-                        const confirmado = await showConfirm(
-                            'Deseja registrar o recebimento desta transferência?',
-                            'Confirmar Recebimento',
-                            'info'
-                        );
-                        if (confirmado) {
-                            await atualizarEtapa(t.id, 'recebido');
-                            await showAlert('Recebimento registrado com sucesso!', 'Sucesso', 'success');
-                        }
+                        const dadosRecebimento = await solicitarDadosRecebimento();
+                        if (!dadosRecebimento) return;
+                        await atualizarEtapa(t.id, 'recebido', {
+                            observacao_recebimento: dadosRecebimento.observacao,
+                            adicionarTagDivergencia: dadosRecebimento.adicionarDivergencia
+                        });
+                        await showAlert('Recebimento registrado com sucesso!', 'Sucesso', 'success');
                     };
                     acoesContainer.appendChild(btnReceber);
                 } else {
@@ -563,13 +844,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                 } 
             } else if (t.status === 'cancelado') {
                 acoesContainer.innerHTML = '<p style="color: #dc3545; font-weight: 600;">❌ Transferência cancelada.</p>'; 
-            } else if (t.status === 'pendente') {
-                // Compatibilidade com status antigo
-                const btn = document.createElement('button');
-                btn.className = 'btn btn-info'; 
-                btn.innerHTML = '<i data-lucide="play"></i> Iniciar Separação';
-                btn.onclick = () => mudarStatus(t.id, 'em_separacao');
-                acoesContainer.appendChild(btn);
             } else if (t.status === 'aguardando_lancamento') {
                 // Compatibilidade com status antigo
                 acoesContainer.innerHTML = `<div class="form-group"><label for="input-transf-interna">Nº da Transferência (Sistema Principal) *</label><input type="text" id="input-transf-interna" placeholder="Digite o número da transferência"></div><button class="btn btn-primary" id="btn-lancar-transferencia"><i data-lucide="send"></i> Lançamento Concluído</button>`;
@@ -577,6 +851,23 @@ document.addEventListener('DOMContentLoaded', async function() {
             } else { 
                 acoesContainer.innerHTML = '<p>Status desconhecido.</p>'; 
             }
+        }
+
+        if (usuarioEhAdmin) {
+            const adminActions = document.createElement('div');
+            adminActions.style.marginTop = '20px';
+            adminActions.style.display = 'flex';
+            adminActions.style.justifyContent = 'flex-end';
+
+            const btnExcluir = document.createElement('button');
+            btnExcluir.className = 'btn btn-danger';
+            btnExcluir.style.backgroundColor = '#dc3545';
+            btnExcluir.innerHTML = '<i data-lucide="trash-2"></i> Excluir Transferência';
+            btnExcluir.onclick = () => excluirTransferencia(t.id);
+
+            adminActions.appendChild(btnExcluir);
+            acoesContainer.appendChild(adminActions);
+            lucide.createIcons();
         }
         
         // Mostrar timestamps se existirem
@@ -635,6 +926,17 @@ document.addEventListener('DOMContentLoaded', async function() {
         const [ano, mes, dia] = dataISO.split('-');
         return `${dia}/${mes}/${ano}`;
     }
+
+    function getLocalISODate(date = new Date()) {
+        return date.toLocaleDateString('en-CA');
+    }
+
+    function obterDataISO(dataString) {
+        if (!dataString) return '';
+        const data = new Date(dataString);
+        if (isNaN(data.getTime())) return dataString.split('T')[0];
+        return data.toLocaleDateString('en-CA');
+    }
     
     function formatarDataHora(dataString) {
         if (!dataString) return '-';
@@ -645,6 +947,36 @@ document.addEventListener('DOMContentLoaded', async function() {
             year: 'numeric', 
             hour: '2-digit', 
             minute: '2-digit' 
+        });
+    }
+    function preencherSelectTags() {
+        if (!tagInput) return;
+        tagInput.innerHTML = '<option value="">Selecione</option>';
+        globalTags.forEach(tag => {
+            const option = document.createElement('option');
+            option.value = tag;
+            option.textContent = tag;
+            tagInput.appendChild(option);
+        });
+    }
+    function resetItemInputs() {
+        if (novoItemCodigo) novoItemCodigo.value = '';
+        if (novoItemQuantidade) novoItemQuantidade.value = '';
+    }
+
+    preencherSelectStatus(dashboardStatusFilter, DASHBOARD_STATUS_ALLOWED);
+    preencherSelectStatus(filtroStatus);
+    preencherSelectTags();
+
+    function preencherSelectStatus(select, allowedValues = null) {
+        if (!select) return;
+        select.innerHTML = '';
+        STATUS_FILTER_OPTIONS.forEach(opt => {
+            if (allowedValues && !allowedValues.includes(opt.value)) return;
+            const option = document.createElement('option');
+            option.value = opt.value;
+            option.textContent = opt.label;
+            select.appendChild(option);
         });
     }
     
@@ -734,11 +1066,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     // Nova função para atualizar etapa com novo endpoint
-    async function atualizarEtapa(transferId, novoStatus) {
+    async function atualizarEtapa(transferId, novoStatus, extras = {}) {
         try {
             const response = await apiFetch(`/api/transferencias/${transferId}/etapa`, {
                 method: 'PUT',
-                body: JSON.stringify({ status: novoStatus })
+                body: JSON.stringify({ status: novoStatus, ...extras })
             });
             
             if (response.ok) {
@@ -823,56 +1155,228 @@ document.addEventListener('DOMContentLoaded', async function() {
             await showAlert('Erro de conexão com o servidor', 'Erro', 'danger');
         }
     }
-    function adicionarItem() {
+    function adicionarItem(codigo, quantidade) {
+        if (!codigo || typeof quantidade === 'undefined') return;
         const itemRow = document.createElement('div');
         itemRow.className = 'item-row';
-        itemRow.innerHTML = `
-            <div class="form-group">
-                <input type="text" class="item-codigo" required placeholder="Código do produto">
-            </div>
-            <div class="form-group">
-                <input type="number" class="item-quantidade" required min="1" placeholder="Ex: 10">
-            </div>
+
+        const codigoInfo = document.createElement('div');
+        codigoInfo.className = 'item-info';
+        codigoInfo.dataset.field = 'codigo';
+        codigoInfo.innerHTML = `<strong class="item-codigo-label">${codigo}</strong>`;
+
+        const quantidadeInfo = document.createElement('div');
+        quantidadeInfo.className = 'item-info';
+        quantidadeInfo.dataset.field = 'quantidade';
+        quantidadeInfo.innerHTML = `<span class="item-quantidade-label">${quantidade}</span>`;
+
+        const actions = document.createElement('div');
+        actions.className = 'item-actions';
+
+        const hiddenCodigo = document.createElement('input');
+        hiddenCodigo.type = 'hidden';
+        hiddenCodigo.className = 'item-codigo';
+        hiddenCodigo.value = codigo;
+
+        const hiddenQuantidade = document.createElement('input');
+        hiddenQuantidade.type = 'hidden';
+        hiddenQuantidade.className = 'item-quantidade';
+        hiddenQuantidade.value = quantidade;
+
+        itemRow.appendChild(codigoInfo);
+        itemRow.appendChild(quantidadeInfo);
+        itemRow.appendChild(actions);
+        itemRow.appendChild(hiddenCodigo);
+        itemRow.appendChild(hiddenQuantidade);
+
+        configurarAcoesItem(itemRow);
+        itensContainer.appendChild(itemRow);
+        if (window.lucide) {
+            lucide.createIcons();
+        }
+        marcarFormularioAlterado();
+    }
+
+    function configurarAcoesItem(itemRow) {
+        const actions = itemRow.querySelector('.item-actions');
+        if (!actions) return;
+        actions.innerHTML = `
+            <button type="button" class="btn-edit-item" aria-label="Editar item">
+                <i data-lucide="edit-3"></i>
+            </button>
             <button type="button" class="btn-remover-item" aria-label="Remover item">
                 <i data-lucide="trash-2"></i>
             </button>
         `;
-        
-        // Adicionar validação de produto duplicado
-        const codigoInput = itemRow.querySelector('.item-codigo');
-        codigoInput.addEventListener('blur', async () => {
-            const codigo = codigoInput.value.trim();
-            const destino = document.getElementById('destino').value;
-            
-            if (!codigo || !destino) return;
-            
-            try {
-                const response = await apiFetch(`/api/verificar-produto/${encodeURIComponent(codigo)}/${encodeURIComponent(destino)}`);
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    
-                    if (data.duplicado) {
-                        const confirmado = await showConfirm(
-                            data.mensagem + '\n\nDeseja adicionar mesmo assim?',
-                            'Produto em Transferência Ativa',
-                            'warning'
-                        );
-                        
-                        if (!confirmado) {
-                            codigoInput.value = '';
-                            codigoInput.focus();
-                        }
-                    }
+
+        const btnEditar = actions.querySelector('.btn-edit-item');
+        const btnRemover = actions.querySelector('.btn-remover-item');
+
+        if (btnEditar) {
+            btnEditar.addEventListener('click', () => editarItem(itemRow));
+        }
+        if (btnRemover) {
+            btnRemover.addEventListener('click', () => {
+                if (itemRow.classList.contains('editing')) return;
+                itemRow.remove();
+                marcarFormularioAlterado();
+            });
+        }
+
+        lucide.createIcons();
+    }
+
+    function editarItem(itemRow) {
+        if (itemRow.classList.contains('editing')) return;
+        itemRow.classList.add('editing');
+
+        const codigoHidden = itemRow.querySelector('.item-codigo');
+        const quantidadeHidden = itemRow.querySelector('.item-quantidade');
+        const codigoInfo = itemRow.querySelector('.item-info[data-field="codigo"]');
+        const quantidadeInfo = itemRow.querySelector('.item-info[data-field="quantidade"]');
+        const actions = itemRow.querySelector('.item-actions');
+
+        const inputCodigo = document.createElement('input');
+        inputCodigo.type = 'text';
+        inputCodigo.className = 'input-inline';
+        inputCodigo.value = codigoHidden?.value || '';
+
+        const inputQuantidade = document.createElement('input');
+        inputQuantidade.type = 'number';
+        inputQuantidade.min = '1';
+        inputQuantidade.className = 'input-inline';
+        inputQuantidade.value = quantidadeHidden?.value || 1;
+
+        if (codigoInfo) {
+            codigoInfo.innerHTML = '';
+            codigoInfo.appendChild(inputCodigo);
+        }
+        if (quantidadeInfo) {
+            quantidadeInfo.innerHTML = '';
+            quantidadeInfo.appendChild(inputQuantidade);
+        }
+
+        if (actions) {
+            actions.innerHTML = `
+                <button type="button" class="btn-save-item" aria-label="Salvar item"><i data-lucide="check"></i></button>
+                <button type="button" class="btn-cancel-item" aria-label="Cancelar edição"><i data-lucide="x"></i></button>
+            `;
+
+            const btnSalvar = actions.querySelector('.btn-save-item');
+            const btnCancelar = actions.querySelector('.btn-cancel-item');
+
+            btnSalvar?.addEventListener('click', async () => {
+                const novoCodigo = inputCodigo.value.trim();
+                const novaQuantidade = parseInt(inputQuantidade.value, 10);
+
+                if (!novoCodigo) {
+                    await showAlert('Informe o código do produto.', 'Campo obrigatório', 'warning');
+                    inputCodigo.focus();
+                    return;
                 }
-            } catch (error) {
-                console.error('Erro ao verificar produto:', error);
+                if (!novaQuantidade || novaQuantidade <= 0) {
+                    await showAlert('Informe uma quantidade válida.', 'Campo obrigatório', 'warning');
+                    inputQuantidade.focus();
+                    return;
+                }
+
+                if (codigoHidden) codigoHidden.value = novoCodigo;
+                if (quantidadeHidden) quantidadeHidden.value = novaQuantidade;
+
+                if (codigoInfo) {
+                    codigoInfo.innerHTML = `<strong class="item-codigo-label">${novoCodigo}</strong>`;
+                }
+                if (quantidadeInfo) {
+                    quantidadeInfo.innerHTML = `<span class="item-quantidade-label">${novaQuantidade}</span>`;
+                }
+
+                itemRow.classList.remove('editing');
+                configurarAcoesItem(itemRow);
+                marcarFormularioAlterado();
+            });
+
+            btnCancelar?.addEventListener('click', () => {
+                if (codigoInfo) {
+                    codigoInfo.innerHTML = `<strong class="item-codigo-label">${codigoHidden?.value || ''}</strong>`;
+                }
+                if (quantidadeInfo) {
+                    quantidadeInfo.innerHTML = `<span class="item-quantidade-label">${quantidadeHidden?.value || 0}</span>`;
+                }
+                itemRow.classList.remove('editing');
+                configurarAcoesItem(itemRow);
+            });
+
+            lucide.createIcons();
+        }
+    }
+
+    btnAddItem.addEventListener('click', adicionarItemDoFormulario);
+    if (novoItemCodigo) {
+        novoItemCodigo.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                novoItemQuantidade?.focus();
             }
         });
-        
-        itemRow.querySelector('.btn-remover-item').addEventListener('click', () => itemRow.remove());
-        itensContainer.appendChild(itemRow);
-        lucide.createIcons();
+    }
+    if (novoItemQuantidade) {
+        novoItemQuantidade.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                adicionarItemDoFormulario();
+            }
+        });
+    }
+
+    async function adicionarItemDoFormulario() {
+        if (!novoItemCodigo || !novoItemQuantidade) return;
+        const codigo = novoItemCodigo.value.trim();
+        const quantidade = parseInt(novoItemQuantidade.value, 10);
+        const destino = document.getElementById('destino').value;
+
+        if (!codigo) {
+            await showAlert('Informe o código do produto.', 'Campo obrigatório', 'warning');
+            novoItemCodigo.focus();
+            return;
+        }
+
+        if (!destino) {
+            await showAlert('Selecione a filial de destino antes de adicionar itens.', 'Campo obrigatório', 'warning');
+            return;
+        }
+
+        if (!quantidade || quantidade <= 0) {
+            await showAlert('Informe uma quantidade válida.', 'Campo obrigatório', 'warning');
+            novoItemQuantidade.focus();
+            return;
+        }
+
+        const permitido = await verificarProdutoDuplicadoAoAdicionar(codigo, destino);
+        if (!permitido) return;
+
+        adicionarItem(codigo, quantidade);
+        resetItemInputs();
+        novoItemCodigo.focus();
+    }
+
+    async function verificarProdutoDuplicadoAoAdicionar(codigo, destino) {
+        try {
+            const response = await apiFetch(`/api/verificar-produto/${encodeURIComponent(codigo)}/${encodeURIComponent(destino)}`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.duplicado) {
+                    const confirmado = await showConfirm(
+                        `${data.mensagem}\n\nDeseja adicionar mesmo assim?`,
+                        'Produto em Transferência Ativa',
+                        'warning'
+                    );
+                    return confirmado;
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao verificar produto:', error);
+        }
+        return true;
     }
     
     // Editar Rascunho
@@ -882,65 +1386,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             showAlert('Rascunho não encontrado', 'Erro', 'danger');
             return;
         }
-        
-        // Marcar que está editando
-        editandoRascunhoId = transferId;
-        
-        // Preencher formulário
-        const selectOrigem = document.getElementById('origem');
-        const selectDestino = document.getElementById('destino');
-        
-        // Se tem ID de filial, usar ID, senão buscar pelo nome
-        if (t.filial_origem_id) {
-            selectOrigem.value = t.filial_origem_id;
-        } else {
-            // Buscar ID pelo nome (compatibilidade com dados antigos)
-            const optionOrigem = Array.from(selectOrigem.options).find(opt => opt.text === t.origem);
-            if (optionOrigem) selectOrigem.value = optionOrigem.value;
-        }
-        
-        if (t.filial_destino_id) {
-            selectDestino.value = t.filial_destino_id;
-        } else {
-            // Buscar ID pelo nome (compatibilidade com dados antigos)
-            const optionDestino = Array.from(selectDestino.options).find(opt => opt.text === t.destino);
-            if (optionDestino) selectDestino.value = optionDestino.value;
-        }
-        
-        document.getElementById('solicitante').value = t.solicitante;
-        
-        // Carregar tags
-        currentTransferTags = [...(t.tags || [])];
-        renderFormTags();
-        
-        // Limpar itens existentes
-        itensContainer.innerHTML = '';
-        
-        // Adicionar itens do rascunho
-        t.itens.forEach(item => {
-            const itemRow = document.createElement('div');
-            itemRow.className = 'item-row';
-            itemRow.innerHTML = `
-                <div class="form-group">
-                    <input type="text" class="item-codigo" required placeholder="Código do produto" value="${item.codigo}">
-                </div>
-                <div class="form-group">
-                    <input type="number" class="item-quantidade" required min="1" placeholder="Ex: 10" value="${item.solicitada}">
-                </div>
-                <button type="button" class="btn-remover-item" aria-label="Remover item">
-                    <i data-lucide="trash-2"></i>
-                </button>
-            `;
-            itemRow.querySelector('.btn-remover-item').addEventListener('click', () => itemRow.remove());
-            itensContainer.appendChild(itemRow);
-        });
-        
-        lucide.createIcons();
-        
-        // Mudar para view de cadastro
-        showView('cadastro');
-        
-        // Mostrar mensagem
+        iniciarEdicaoTransferencia(t, 'rascunho');
         showAlert('Rascunho carregado! Faça as alterações e clique em "Salvar Rascunho".', 'Editando Rascunho', 'info');
     }
     
@@ -1021,17 +1467,27 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
             
             if (response.ok) {
+                bloquearDeteccaoAlteracoes = true;
                 form.reset(); 
                 itensContainer.innerHTML = ''; 
                 currentTransferTags = []; 
                 renderFormTags(); 
-                adicionarItem();
+                resetItemInputs();
+                bloquearDeteccaoAlteracoes = false;
+                resetFormularioAlterado();
                 
-                const mensagem = editandoRascunhoId ? 'Rascunho atualizado com sucesso!' : 'Transferência salva com sucesso!';
+                let mensagem;
+                if (editandoRascunhoId) {
+                    mensagem = modoEdicaoTransferencia === 'pendente'
+                        ? 'Transferência pendente atualizada com sucesso!'
+                        : 'Rascunho atualizado com sucesso!';
+                } else {
+                    mensagem = comoRascunho ? 'Rascunho salvo com sucesso!' : 'Transferência salva com sucesso!';
+                }
                 hideLoading();
                 await showAlert(mensagem, 'Sucesso', 'success');
                 
-                editandoRascunhoId = null;
+                limparModoEdicaoTransferencia();
                 
                 // Recarregar transferências
                 await carregarTransferencias();
@@ -1055,11 +1511,16 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // --- Event Listeners ---
     navButtons.dashboard.addEventListener('click', async () => {
+        if (!(await confirmarSaidaCadastro())) return;
         showView('dashboard');
         await atualizarTransferenciasSeNecessario();
     });
-    navButtons.cadastro.addEventListener('click', () => showView('cadastro'));
+    navButtons.cadastro.addEventListener('click', async () => {
+        if (!(await confirmarSaidaCadastro())) return;
+        showView('cadastro');
+    });
     navButtons.visualizacao.addEventListener('click', async () => { 
+        if (!(await confirmarSaidaCadastro())) return;
         showView('visualizacao'); 
         await atualizarTransferenciasSeNecessario();
         aplicarFiltros();
@@ -1073,7 +1534,9 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         }
     });
-    btnAddItem.addEventListener('click', adicionarItem);
+    if (dashboardStatusFilter) {
+        dashboardStatusFilter.addEventListener('change', () => renderDashboardList());
+    }
     
     // Importar XLSX/CSV em lote
     const btnImportarXlsx = document.getElementById('btn-importar-xlsx');
@@ -1368,26 +1831,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     function preencherFormularioComItens(itens) {
         itensContainer.innerHTML = '';
-        itens.forEach(({ codigo, solicitada }) => {
-            const itemRow = document.createElement('div');
-            itemRow.className = 'item-row';
-            itemRow.innerHTML = `
-                <div class="form-group">
-                    <input type="text" class="item-codigo" required placeholder="Código do produto" value="${codigo}">
-                </div>
-                <div class="form-group">
-                    <input type="number" class="item-quantidade" required min="1" placeholder="Ex: 10" value="${solicitada}">
-                </div>
-                <button type="button" class="btn-remover-item" aria-label="Remover item">
-                    <i data-lucide="trash-2"></i>
-                </button>
-            `;
-            itemRow.querySelector('.btn-remover-item').addEventListener('click', () => itemRow.remove());
-            itensContainer.appendChild(itemRow);
-        });
-        if (itens.length === 0) {
-            adicionarItem();
-        }
+        itens.forEach(({ codigo, solicitada }) => adicionarItem(codigo, solicitada));
         lucide.createIcons();
     }
 
@@ -1432,18 +1876,39 @@ document.addEventListener('DOMContentLoaded', async function() {
         return resultado;
     }
     
-    btnAddTag.addEventListener('click', () => {
-        const newTag = tagInput.value.trim();
-        if (newTag && !currentTransferTags.includes(newTag)) {
-            currentTransferTags.push(newTag);
-            if (!globalTags.includes(newTag)) {
-                globalTags.push(newTag);
-                populateDatalist();
-            }
-            renderFormTags();
+    btnAddTag.addEventListener('click', adicionarTagSelecionada);
+    if (tagInput) {
+        tagInput.addEventListener('change', adicionarTagSelecionada);
+    }
+
+    function adicionarTagSelecionada() {
+        const value = tagInput.value;
+        if (!value) return;
+
+        const tagSelecionada = globalTags.find(tag => String(tag) === value);
+        if (!tagSelecionada) {
+            showAlert('Selecione uma tag existente na lista.', 'Tag inválida', 'warning');
+            tagInput.value = '';
+            return;
         }
+
+        if (currentTransferTags.includes(tagSelecionada)) {
+            showAlert('Já existe uma tag selecionada. Remova antes de escolher outra.', 'Tag duplicada', 'warning');
+            tagInput.value = '';
+            return;
+        }
+
+        if (currentTransferTags.length >= 1) {
+            showAlert('Você só pode adicionar uma tag por transferência. Remova a tag atual para escolher outra.', 'Limite de tags', 'warning');
+            tagInput.value = '';
+            return;
+        }
+
+        currentTransferTags.push(tagSelecionada);
+        renderFormTags();
+        marcarFormularioAlterado();
         tagInput.value = '';
-    });
+    }
 
     // Botão "Salvar Rascunho"
     btnSalvarRascunho.addEventListener('click', async () => {
@@ -1477,7 +1942,7 @@ document.addEventListener('DOMContentLoaded', async function() {
          itensContainer.innerHTML = ''; 
          currentTransferTags = []; 
          renderFormTags(); 
-         adicionarItem();
+         resetItemInputs();
          showView('dashboard');
     });
 
@@ -1494,9 +1959,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             await showAlert('Erro ao carregar informacoes iniciais. Tente atualizar a pagina.', 'Erro', 'danger');
         } finally {
             hideLoading();
-            if (itensContainer.children.length === 0) {
-                adicionarItem();
-            }
+            if (novoItemCodigo) novoItemCodigo.focus();
         }
     }
 
@@ -1647,6 +2110,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     const filtroTag = document.getElementById('filtro-tag');
     const filtroOrigem = document.getElementById('filtro-origem');
     const filtroDestino = document.getElementById('filtro-destino');
+    const filtroDataOpcao = document.getElementById('filtro-data-opcao');
+    const filtroDataPersonalizada = document.getElementById('filtro-data-personalizada');
     const filtroProduto = document.getElementById('filtro-produto');
     const filtroMinhaFilial = document.getElementById('filtro-minha-filial');
     const btnAplicarFiltros = document.getElementById('btn-aplicar-filtros');
@@ -1681,14 +2146,17 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         Array.from(selectOrigem.options).forEach(opt => {
             if (opt.value) {
+                const nomeFilial = (opt.textContent || '').trim();
+                const valorFilial = nomeFilial.toLowerCase();
+
                 const optionOrigem = document.createElement('option');
-                optionOrigem.value = opt.value;
-                optionOrigem.textContent = opt.textContent;
+                optionOrigem.value = valorFilial;
+                optionOrigem.textContent = nomeFilial;
                 filtroOrigem.appendChild(optionOrigem);
                 
                 const optionDestino = document.createElement('option');
-                optionDestino.value = opt.value;
-                optionDestino.textContent = opt.textContent;
+                optionDestino.value = valorFilial;
+                optionDestino.textContent = nomeFilial;
                 filtroDestino.appendChild(optionDestino);
             }
         });
@@ -1706,12 +2174,17 @@ document.addEventListener('DOMContentLoaded', async function() {
         const tagSelecionada = filtroTag.value.toLowerCase();
         const origemSelecionada = filtroOrigem.value.toLowerCase();
         const destinoSelecionado = filtroDestino.value.toLowerCase();
-        const produtoDigitado = filtroProduto.value.toLowerCase().trim();
+        const statusSelecionado = filtroStatus ? filtroStatus.value : '';
+        const produtoDigitado = (filtroProduto.value || '').toLowerCase().trim();
         const apenasMinhaFilial = filtroMinhaFilial && filtroMinhaFilial.checked && minhaFilialNome;
+        const dataOpcao = filtroDataOpcao ? filtroDataOpcao.value : '';
+        const dataPersonalizada = filtroDataPersonalizada ? filtroDataPersonalizada.value : '';
+        const hojeISO = getLocalISODate();
 
         const filtrados = transferencias.filter(t => {
-            const origemLower = (t.origem || '').toLowerCase();
-            const destinoLower = (t.destino || '').toLowerCase();
+            const origemLower = (t.origem || '').trim().toLowerCase();
+            const destinoLower = (t.destino || '').trim().toLowerCase();
+            const dataTransferencia = obterDataISO(t.data_criacao);
 
             if (apenasMinhaFilial) {
                 const participa = origemLower === minhaFilialNome || destinoLower === minhaFilialNome;
@@ -1732,10 +2205,25 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (destinoSelecionado && destinoLower !== destinoSelecionado) {
                 return false;
             }
+
+            // Filtro por status
+            if (statusSelecionado && t.status !== statusSelecionado) {
+                return false;
+            }
+
+            if (dataOpcao === 'hoje' && dataTransferencia !== hojeISO) {
+                return false;
+            }
+
+            if (dataOpcao === 'personalizada' && dataPersonalizada) {
+                if (dataTransferencia !== dataPersonalizada) {
+                    return false;
+                }
+            }
             
             // Filtro por código de produto
             if (produtoDigitado && (!t.itens || !t.itens.some(item => 
-                item.codigo.toLowerCase().includes(produtoDigitado)))) {
+                (item.codigo || '').toLowerCase().includes(produtoDigitado)))) {
                 return false;
             }
             
@@ -1748,9 +2236,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Renderizar lista filtrada
     function renderTransferListFiltrada(data) {
+        const dataOrdenada = ordenarPorAtualizacao(data);
         transferListContainer.innerHTML = '';
         
-        if (data.length === 0) {
+        if (dataOrdenada.length === 0) {
             transferListContainer.innerHTML = '<p style="text-align: center; padding: 40px; color: #6c757d;">Nenhuma transferência encontrada com os filtros aplicados.</p>';
             return;
         }
@@ -1766,8 +2255,10 @@ document.addEventListener('DOMContentLoaded', async function() {
                     <th>Origem</th>
                     <th>Destino</th>
                     <th>Solicitante</th>
+                    <th>Criado por</th>
                     <th>Nº Interno</th>
                     <th>Status</th>
+                    <th>Itens</th>
                     <th>Tags</th>
                 </tr>
             </thead>
@@ -1776,7 +2267,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         const tbody = table.querySelector('tbody');
         
-        data.forEach(t => {
+        dataOrdenada.forEach(t => {
             const statusInfo = getStatusInfo(t.status);
             const row = document.createElement('tr');
             row.className = 'transfer-row';
@@ -1784,6 +2275,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             
             const numeroInterno = t.numeroTransferenciaInterna || '-';
             const dataFormatada = formatarData(t.data_criacao);
+            const qtdItens = Array.isArray(t.itens) ? t.itens.length : (t.total_itens || 0);
+            const labelItens = `${qtdItens} ${qtdItens === 1 ? 'item' : 'itens'}`;
             
             row.innerHTML = `
                 <td><strong>${t.id}</strong></td>
@@ -1791,8 +2284,10 @@ document.addEventListener('DOMContentLoaded', async function() {
                 <td>${t.origem}</td>
                 <td>${t.destino}</td>
                 <td>${t.solicitante}</td>
+                <td>${t.usuario_nome || '-'}</td>
                 <td>${numeroInterno}</td>
                 <td><span class="status-tag ${statusInfo.className}">${statusInfo.text}</span></td>
+                <td><span class="badge badge-light">${labelItens}</span></td>
                 <td><div class="tags-container">${renderTags(t.tags)}</div></td>
             `;
             
@@ -1814,6 +2309,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         filtroOrigem.value = '';
         filtroDestino.value = '';
         filtroProduto.value = '';
+        if (filtroStatus) {
+            filtroStatus.value = '';
+        }
+        if (filtroDataOpcao) {
+            filtroDataOpcao.value = '';
+        }
+        if (filtroDataPersonalizada) {
+            filtroDataPersonalizada.value = '';
+            filtroDataPersonalizada.style.display = 'none';
+        }
         if (minhaFilialNome && filtroMinhaFilial && !filtroMinhaFilial.disabled) {
             filtroMinhaFilial.checked = true;
         }
@@ -1826,6 +2331,24 @@ document.addEventListener('DOMContentLoaded', async function() {
     filtroTag.addEventListener('change', aplicarFiltros);
     filtroOrigem.addEventListener('change', aplicarFiltros);
     filtroDestino.addEventListener('change', aplicarFiltros);
+    if (filtroStatus) {
+        filtroStatus.addEventListener('change', aplicarFiltros);
+    }
+    if (filtroDataOpcao) {
+        filtroDataOpcao.addEventListener('change', () => {
+            const usarPersonalizada = filtroDataOpcao.value === 'personalizada';
+            if (filtroDataPersonalizada) {
+                filtroDataPersonalizada.style.display = usarPersonalizada ? 'block' : 'none';
+                if (!usarPersonalizada) {
+                    filtroDataPersonalizada.value = '';
+                }
+            }
+            aplicarFiltros();
+        });
+    }
+    if (filtroDataPersonalizada) {
+        filtroDataPersonalizada.addEventListener('change', aplicarFiltros);
+    }
     if (filtroMinhaFilial) {
         filtroMinhaFilial.addEventListener('change', aplicarFiltros);
     }
@@ -1845,3 +2368,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     }, 500);
 });
     
+
+
+
