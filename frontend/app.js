@@ -323,6 +323,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     let transferenciasCarregadas = false;
     let nextId = 1;
     let previousView = 'dashboard';
+    let currentView = 'dashboard';
     let globalTags = ['Urgente', 'Retirar no local', 'Frágil', 'Cliente VIP'];
     let globalTagsData = [];
     let currentTransferTags = [];
@@ -381,6 +382,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         Object.values(navButtons).forEach(btn => btn.classList.remove('active'));
         if(navButtons[viewName]) navButtons[viewName].classList.add('active');
         
+        currentView = viewName;
         if (viewName !== 'detalhe') {
             transferenciaEmDetalhe = null;
         }
@@ -2384,6 +2386,18 @@ document.addEventListener('DOMContentLoaded', async function() {
             clearInterval(popularFiltrosTimeout);
         }
     }, 500);
+
+    // Atualização automática a cada 1 minuto nas telas de lista
+    setInterval(async () => {
+        if (currentView === 'dashboard' || currentView === 'visualizacao') {
+            await atualizarTransferenciasSeNecessario(false, false);
+            if (currentView === 'visualizacao') {
+                aplicarFiltros();
+            } else if (currentView === 'dashboard') {
+                updateDashboard();
+            }
+        }
+    }, INTERVALO_ATUALIZACAO_MS);
 });
     
 
