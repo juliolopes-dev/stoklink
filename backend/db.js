@@ -11,7 +11,11 @@ const pool = mysql.createPool({
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    timezone: '-03:00' // Horário de Brasília (UTC-3)
+    timezone: '-03:00', // Horário de Brasília (UTC-3)
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 10000, // 10 segundos
+    idleTimeout: 60000, // 60 segundos
+    connectTimeout: 10000 // 10 segundos para timeout de conexão
 });
 
 // Testar conexão

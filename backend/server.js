@@ -125,6 +125,7 @@ app.post('/api/auth/login', async (req, res) => {
                 role: usuario.role,
                 filial: filialNome,
                 filial_id: filialId,
+                acesso_recebimento: usuario.acesso_recebimento || false,
                 empresa: {
                     id: usuario.empresa_id,
                     nome: usuario.empresa_nome
@@ -141,7 +142,7 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', verificarToken, async (req, res) => {
     try {
         const [usuarios] = await db.query(`
-            SELECT u.id, u.nome, u.email, u.role, u.filial_id,
+            SELECT u.id, u.nome, u.email, u.role, u.filial_id, u.acesso_recebimento,
                    f.nome as filial_nome,
                    e.id as empresa_id, e.nome as empresa_nome
             FROM usuarios u
@@ -171,6 +172,7 @@ app.get('/api/auth/me', verificarToken, async (req, res) => {
             role: usuario.role,
             filial: filialNome,
             filial_id: usuario.filial_id,
+            acesso_recebimento: usuario.acesso_recebimento || false,
             empresa: {
                 id: usuario.empresa_id,
                 nome: usuario.empresa_nome
@@ -271,6 +273,8 @@ app.post('/api/auth/registrar', verificarToken, verificarRole('admin'), async (r
 app.get('/api/transferencias', verificarToken, async (req, res) => {
     try {
         const empresa_id = req.usuario.empresa_id;
+        console.log('📊 Buscando transferências para empresa:', empresa_id);
+        const startTime = Date.now();
         
         const [transferencias] = await db.query(`
             SELECT t.*, u.nome as usuario_nome
@@ -279,27 +283,60 @@ app.get('/api/transferencias', verificarToken, async (req, res) => {
             WHERE t.empresa_id = ?
             ORDER BY COALESCE(t.updated_at, t.data_fim_separacao, t.data_criacao) DESC
         `, [empresa_id]);
+        
+        console.log(`📊 Encontradas ${transferencias.length} transferências em ${Date.now() - startTime}ms`);
 
-        // Para cada transferência, buscar itens e tags
-        for (let transf of transferencias) {
-            // Buscar itens
-            const [itens] = await db.query(
-                'SELECT codigo_produto as codigo, quantidade_solicitada as solicitada, quantidade_atendida as atendida FROM itens_transferencia WHERE transferencia_id = ?',
-                [transf.id]
+        if (transferencias.length > 0) {
+            // Buscar todos os IDs das transferências
+            const transferIds = transferencias.map(t => t.id);
+            
+            // Buscar todos os itens de uma vez
+            const [todosItens] = await db.query(
+                `SELECT transferencia_id, codigo_produto as codigo, quantidade_solicitada as solicitada, quantidade_atendida as atendida 
+                 FROM itens_transferencia 
+                 WHERE transferencia_id IN (?)`,
+                [transferIds]
             );
-            transf.itens = itens;
-
-            // Buscar tags
-            const [tags] = await db.query(`
-                SELECT t.nome 
+            
+            // Buscar todas as tags de uma vez
+            const [todasTags] = await db.query(`
+                SELECT tt.transferencia_id, t.nome 
                 FROM tags t
                 INNER JOIN transferencia_tags tt ON t.id = tt.tag_id
-                WHERE tt.transferencia_id = ?
-            `, [transf.id]);
-            transf.tags = tags.map(t => t.nome);
-            transf.numeroTransferenciaInterna = transf.numero_transferencia_interna;
+                WHERE tt.transferencia_id IN (?)
+            `, [transferIds]);
+            
+            // Agrupar itens e tags por transferência
+            const itensMap = {};
+            const tagsMap = {};
+            
+            todosItens.forEach(item => {
+                if (!itensMap[item.transferencia_id]) {
+                    itensMap[item.transferencia_id] = [];
+                }
+                itensMap[item.transferencia_id].push({
+                    codigo: item.codigo,
+                    solicitada: item.solicitada,
+                    atendida: item.atendida
+                });
+            });
+            
+            todasTags.forEach(tag => {
+                if (!tagsMap[tag.transferencia_id]) {
+                    tagsMap[tag.transferencia_id] = [];
+                }
+                tagsMap[tag.transferencia_id].push(tag.nome);
+            });
+            
+            // Atribuir itens e tags às transferências
+            for (let transf of transferencias) {
+                transf.itens = itensMap[transf.id] || [];
+                transf.tags = tagsMap[transf.id] || [];
+                transf.numeroTransferenciaInterna = transf.numero_transferencia_interna;
+            }
         }
-
+        
+        console.log(`📊 Total processado em ${Date.now() - startTime}ms`);
         res.json(transferencias);
     } catch (error) {
         console.error('Erro ao buscar transferências:', error);
@@ -915,7 +952,7 @@ app.get('/api/usuarios', verificarToken, verificarRole('admin', 'gerente'), asyn
         const filial_id = req.query.filial_id; // Opcional: filtrar por filial
         
         let query = `
-            SELECT u.id, u.nome, u.email, u.role, u.ativo, u.filial_id,
+            SELECT u.id, u.nome, u.email, u.role, u.ativo, u.filial_id, u.acesso_recebimento,
                    f.nome as filial_nome, u.created_at
             FROM usuarios u
             LEFT JOIN filiais f ON u.filial_id = f.id
@@ -984,7 +1021,7 @@ app.post('/api/usuarios', verificarToken, verificarRole('admin'), async (req, re
 
 // PUT - Atualizar usuário (apenas admin)
 app.put('/api/usuarios/:id', verificarToken, verificarRole('admin'), async (req, res) => {
-    const { nome, email, role, filial_id, ativo, senha } = req.body;
+    const { nome, email, role, filial_id, ativo, senha, acesso_recebimento } = req.body;
     const empresa_id = req.usuario.empresa_id;
     const usuario_id = req.params.id;
     
@@ -1011,8 +1048,8 @@ app.put('/api/usuarios/:id', verificarToken, verificarRole('admin'), async (req,
             }
         }
         
-        let query = 'UPDATE usuarios SET nome = ?, email = ?, role = ?, filial_id = ?, ativo = ?';
-        let params = [nome, email, role, filial_id, ativo];
+        let query = 'UPDATE usuarios SET nome = ?, email = ?, role = ?, filial_id = ?, ativo = ?, acesso_recebimento = ?';
+        let params = [nome, email, role, filial_id, ativo, acesso_recebimento ? 1 : 0];
         
         // Se enviou nova senha, atualizar
         if (senha) {
@@ -1363,6 +1400,499 @@ app.post('/api/mensagens/:id/reacao', verificarToken, async (req, res) => {
     } catch (error) {
         console.error('❌ Erro ao reagir à mensagem:', error);
         res.status(500).json({ error: 'Erro ao processar reação' });
+    }
+});
+
+// ========================================
+// ROTAS DE RECEBIMENTO DE FÁBRICA
+// ========================================
+
+// Middleware para verificar acesso ao módulo de recebimento
+const verificarAcessoRecebimento = async (req, res, next) => {
+    try {
+        const [rows] = await db.query(
+            'SELECT acesso_recebimento FROM usuarios WHERE id = ?',
+            [req.usuario.id]
+        );
+        if (rows.length === 0 || !rows[0].acesso_recebimento) {
+            // Por enquanto, permitir admin sempre
+            if (req.usuario.role !== 'admin') {
+                return res.status(403).json({ error: 'Acesso não autorizado ao módulo de recebimento' });
+            }
+        }
+        next();
+    } catch (error) {
+        console.error('Erro ao verificar acesso:', error);
+        res.status(500).json({ error: 'Erro ao verificar permissões' });
+    }
+};
+
+// --- FORNECEDORES ---
+
+// GET - Listar fornecedores
+app.get('/api/fornecedores', verificarToken, async (req, res) => {
+    try {
+        const [fornecedores] = await db.query(
+            'SELECT * FROM fornecedores WHERE empresa_id = ? ORDER BY nome',
+            [req.usuario.empresa_id]
+        );
+        res.json(fornecedores);
+    } catch (error) {
+        console.error('Erro ao buscar fornecedores:', error);
+        res.status(500).json({ error: 'Erro ao buscar fornecedores' });
+    }
+});
+
+// POST - Criar fornecedor
+app.post('/api/fornecedores', verificarToken, async (req, res) => {
+    try {
+        const { nome, cnpj, telefone, email, endereco } = req.body;
+        const [result] = await db.query(
+            'INSERT INTO fornecedores (empresa_id, nome, cnpj, telefone, email, endereco) VALUES (?, ?, ?, ?, ?, ?)',
+            [req.usuario.empresa_id, nome, cnpj, telefone, email, endereco]
+        );
+        res.status(201).json({ id: result.insertId, nome, cnpj, telefone, email, endereco });
+    } catch (error) {
+        console.error('Erro ao criar fornecedor:', error);
+        res.status(500).json({ error: 'Erro ao criar fornecedor' });
+    }
+});
+
+// POST - Importar fornecedores em lote (DEVE vir ANTES das rotas com :id)
+app.post('/api/fornecedores/importar', verificarToken, async (req, res) => {
+    try {
+        const { fornecedores } = req.body;
+        
+        if (!fornecedores || !Array.isArray(fornecedores) || fornecedores.length === 0) {
+            return res.status(400).json({ error: 'Nenhum fornecedor para importar' });
+        }
+        
+        let importados = 0;
+        let duplicados = 0;
+        
+        for (const f of fornecedores) {
+            if (!f.nome) continue;
+            
+            // Verificar se já existe (por nome)
+            const [existente] = await db.query(
+                'SELECT id FROM fornecedores WHERE empresa_id = ? AND nome = ?',
+                [req.usuario.empresa_id, f.nome]
+            );
+            
+            if (existente.length > 0) {
+                duplicados++;
+                continue;
+            }
+            
+            // Inserir novo fornecedor
+            await db.query(
+                'INSERT INTO fornecedores (empresa_id, nome, codigo, nome_fantasia) VALUES (?, ?, ?, ?)',
+                [req.usuario.empresa_id, f.nome, f.codigo || null, f.nome_fantasia || null]
+            );
+            importados++;
+        }
+        
+        res.json({ importados, duplicados, total: fornecedores.length });
+    } catch (error) {
+        console.error('Erro ao importar fornecedores:', error);
+        res.status(500).json({ error: 'Erro ao importar fornecedores' });
+    }
+});
+
+// PUT - Atualizar fornecedor
+app.put('/api/fornecedores/:id', verificarToken, async (req, res) => {
+    try {
+        const { nome, cnpj, telefone, email, endereco, ativo } = req.body;
+        await db.query(
+            'UPDATE fornecedores SET nome = ?, cnpj = ?, telefone = ?, email = ?, endereco = ?, ativo = ? WHERE id = ? AND empresa_id = ?',
+            [nome, cnpj, telefone, email, endereco, ativo, req.params.id, req.usuario.empresa_id]
+        );
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Erro ao atualizar fornecedor:', error);
+        res.status(500).json({ error: 'Erro ao atualizar fornecedor' });
+    }
+});
+
+// DELETE - Excluir fornecedor
+app.delete('/api/fornecedores/:id', verificarToken, async (req, res) => {
+    try {
+        await db.query(
+            'DELETE FROM fornecedores WHERE id = ? AND empresa_id = ?',
+            [req.params.id, req.usuario.empresa_id]
+        );
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Erro ao excluir fornecedor:', error);
+        res.status(500).json({ error: 'Erro ao excluir fornecedor' });
+    }
+});
+
+// --- TRANSPORTADORAS ---
+
+// GET - Listar transportadoras
+app.get('/api/transportadoras', verificarToken, async (req, res) => {
+    try {
+        const [transportadoras] = await db.query(
+            'SELECT * FROM transportadoras WHERE empresa_id = ? ORDER BY nome',
+            [req.usuario.empresa_id]
+        );
+        res.json(transportadoras);
+    } catch (error) {
+        console.error('Erro ao buscar transportadoras:', error);
+        res.status(500).json({ error: 'Erro ao buscar transportadoras' });
+    }
+});
+
+// POST - Criar transportadora
+app.post('/api/transportadoras', verificarToken, async (req, res) => {
+    try {
+        const { nome, cnpj, telefone, email } = req.body;
+        const [result] = await db.query(
+            'INSERT INTO transportadoras (empresa_id, nome, cnpj, telefone, email) VALUES (?, ?, ?, ?, ?)',
+            [req.usuario.empresa_id, nome, cnpj, telefone, email]
+        );
+        res.status(201).json({ id: result.insertId, nome, cnpj, telefone, email });
+    } catch (error) {
+        console.error('Erro ao criar transportadora:', error);
+        res.status(500).json({ error: 'Erro ao criar transportadora' });
+    }
+});
+
+// PUT - Atualizar transportadora
+app.put('/api/transportadoras/:id', verificarToken, async (req, res) => {
+    try {
+        const { nome, cnpj, telefone, email, ativo } = req.body;
+        await db.query(
+            'UPDATE transportadoras SET nome = ?, cnpj = ?, telefone = ?, email = ?, ativo = ? WHERE id = ? AND empresa_id = ?',
+            [nome, cnpj, telefone, email, ativo, req.params.id, req.usuario.empresa_id]
+        );
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Erro ao atualizar transportadora:', error);
+        res.status(500).json({ error: 'Erro ao atualizar transportadora' });
+    }
+});
+
+// DELETE - Excluir transportadora
+app.delete('/api/transportadoras/:id', verificarToken, async (req, res) => {
+    try {
+        await db.query(
+            'DELETE FROM transportadoras WHERE id = ? AND empresa_id = ?',
+            [req.params.id, req.usuario.empresa_id]
+        );
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Erro ao excluir transportadora:', error);
+        res.status(500).json({ error: 'Erro ao excluir transportadora' });
+    }
+});
+
+// --- RECEBIMENTOS DE FÁBRICA ---
+
+// Função para gerar código do recebimento
+async function gerarCodigoRecebimento(empresaId) {
+    const ano = new Date().getFullYear();
+    const [rows] = await db.query(
+        `SELECT codigo FROM recebimentos_fabrica 
+         WHERE empresa_id = ? AND codigo LIKE ? 
+         ORDER BY codigo DESC LIMIT 1`,
+        [empresaId, `REC-${ano}-%`]
+    );
+    
+    let sequencial = 1;
+    if (rows.length > 0) {
+        const match = rows[0].codigo.match(/REC-\d{4}-(\d{3})/);
+        if (match) {
+            sequencial = parseInt(match[1], 10) + 1;
+        }
+    }
+    
+    return `REC-${ano}-${String(sequencial).padStart(3, '0')}`;
+}
+
+// GET - Listar recebimentos
+app.get('/api/recebimentos', verificarToken, async (req, res) => {
+    try {
+        const [recebimentos] = await db.query(`
+            SELECT r.*, 
+                   f.nome as fornecedor_nome,
+                   t.nome as transportadora_nome,
+                   fc.nome as filial_chegada_nome,
+                   fd.nome as filial_destino_nome,
+                   uc.nome as usuario_cadastro_nome,
+                   ur.nome as usuario_recebimento_nome,
+                   ucf.nome as usuario_conferencia_nome,
+                   ul.nome as usuario_liberacao_nome
+            FROM recebimentos_fabrica r
+            LEFT JOIN fornecedores f ON r.fornecedor_id = f.id
+            LEFT JOIN transportadoras t ON r.transportadora_id = t.id
+            LEFT JOIN filiais fc ON r.filial_chegada_id = fc.id
+            LEFT JOIN filiais fd ON r.filial_destino_id = fd.id
+            LEFT JOIN usuarios uc ON r.usuario_cadastro_id = uc.id
+            LEFT JOIN usuarios ur ON r.usuario_recebimento_id = ur.id
+            LEFT JOIN usuarios ucf ON r.usuario_conferencia_id = ucf.id
+            LEFT JOIN usuarios ul ON r.usuario_liberacao_id = ul.id
+            WHERE r.empresa_id = ?
+            ORDER BY r.created_at DESC
+        `, [req.usuario.empresa_id]);
+        
+        // Buscar divergências para cada recebimento
+        if (recebimentos.length > 0) {
+            const recebimentoIds = recebimentos.map(r => r.id);
+            const [divergencias] = await db.query(
+                'SELECT * FROM recebimento_divergencias WHERE recebimento_id IN (?)',
+                [recebimentoIds]
+            );
+            
+            // Agrupar divergências por recebimento
+            recebimentos.forEach(rec => {
+                rec.divergencias = divergencias.filter(d => d.recebimento_id === rec.id);
+            });
+        }
+        
+        res.json(recebimentos);
+    } catch (error) {
+        console.error('Erro ao buscar recebimentos:', error);
+        res.status(500).json({ error: 'Erro ao buscar recebimentos' });
+    }
+});
+
+// GET - Buscar recebimento por ID
+app.get('/api/recebimentos/:id', verificarToken, async (req, res) => {
+    try {
+        const [rows] = await db.query(`
+            SELECT r.*, 
+                   f.nome as fornecedor_nome,
+                   t.nome as transportadora_nome,
+                   fc.nome as filial_chegada_nome,
+                   fd.nome as filial_destino_nome
+            FROM recebimentos_fabrica r
+            LEFT JOIN fornecedores f ON r.fornecedor_id = f.id
+            LEFT JOIN transportadoras t ON r.transportadora_id = t.id
+            LEFT JOIN filiais fc ON r.filial_chegada_id = fc.id
+            LEFT JOIN filiais fd ON r.filial_destino_id = fd.id
+            WHERE r.id = ? AND r.empresa_id = ?
+        `, [req.params.id, req.usuario.empresa_id]);
+        
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Recebimento não encontrado' });
+        }
+        
+        res.json(rows[0]);
+    } catch (error) {
+        console.error('Erro ao buscar recebimento:', error);
+        res.status(500).json({ error: 'Erro ao buscar recebimento' });
+    }
+});
+
+// POST - Criar recebimento
+app.post('/api/recebimentos', verificarToken, async (req, res) => {
+    try {
+        const {
+            fornecedor_id,
+            transportadora_id,
+            numero_nota_fiscal,
+            filial_chegada_id,
+            filial_destino_id,
+            volumes,
+            peso_total,
+            observacoes,
+            urgente,
+            data_prevista
+        } = req.body;
+        
+        const codigo = await gerarCodigoRecebimento(req.usuario.empresa_id);
+        
+        const [result] = await db.query(`
+            INSERT INTO recebimentos_fabrica (
+                empresa_id, codigo, fornecedor_id, transportadora_id, numero_nota_fiscal,
+                filial_chegada_id, filial_destino_id, volumes, peso_total, observacoes,
+                urgente, data_prevista, usuario_cadastro_id, status, reserva
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aguardando', 'pendente')
+        `, [
+            req.usuario.empresa_id, codigo, fornecedor_id, transportadora_id, numero_nota_fiscal,
+            filial_chegada_id, filial_destino_id, volumes || 1, peso_total, observacoes,
+            urgente || false, data_prevista, req.usuario.id
+        ]);
+        
+        res.status(201).json({ 
+            id: result.insertId, 
+            codigo,
+            message: 'Recebimento cadastrado com sucesso' 
+        });
+    } catch (error) {
+        console.error('Erro ao criar recebimento:', error);
+        res.status(500).json({ error: 'Erro ao criar recebimento' });
+    }
+});
+
+// PUT - Atualizar recebimento
+app.put('/api/recebimentos/:id', verificarToken, async (req, res) => {
+    try {
+        const {
+            fornecedor_id,
+            transportadora_id,
+            numero_nota_fiscal,
+            filial_chegada_id,
+            filial_destino_id,
+            volumes,
+            peso_total,
+            observacoes,
+            urgente,
+            data_prevista
+        } = req.body;
+        
+        await db.query(`
+            UPDATE recebimentos_fabrica SET
+                fornecedor_id = ?, transportadora_id = ?, numero_nota_fiscal = ?,
+                filial_chegada_id = ?, filial_destino_id = ?, volumes = ?, peso_total = ?,
+                observacoes = ?, urgente = ?, data_prevista = ?
+            WHERE id = ? AND empresa_id = ?
+        `, [
+            fornecedor_id, transportadora_id, numero_nota_fiscal,
+            filial_chegada_id, filial_destino_id, volumes, peso_total,
+            observacoes, urgente, data_prevista,
+            req.params.id, req.usuario.empresa_id
+        ]);
+        
+        res.json({ success: true, message: 'Recebimento atualizado' });
+    } catch (error) {
+        console.error('Erro ao atualizar recebimento:', error);
+        res.status(500).json({ error: 'Erro ao atualizar recebimento' });
+    }
+});
+
+// POST - Registrar chegada (mudar status para 'recebido')
+app.post('/api/recebimentos/:id/receber', verificarToken, async (req, res) => {
+    try {
+        const { filial_recebimento_id, volumes_recebidos, situacao, observacao_recebimento, itens_faltando, itens_sobrando } = req.body;
+        
+        await db.query(`
+            UPDATE recebimentos_fabrica SET
+                status = 'recebido',
+                data_chegada = NOW(),
+                usuario_recebimento_id = ?,
+                filial_recebimento_id = ?,
+                volumes_recebidos = ?,
+                situacao_recebimento = ?,
+                observacao_recebimento = ?
+            WHERE id = ? AND empresa_id = ? AND status = 'aguardando'
+        `, [req.usuario.id, filial_recebimento_id, volumes_recebidos, situacao || 'ok', observacao_recebimento || null, req.params.id, req.usuario.empresa_id]);
+        
+        // Salvar itens de divergência (se houver)
+        if (situacao === 'divergencia') {
+            // Remover divergências anteriores (caso de reprocessamento)
+            await db.query('DELETE FROM recebimento_divergencias WHERE recebimento_id = ?', [req.params.id]);
+            
+            // Inserir itens faltando
+            if (itens_faltando && itens_faltando.length > 0) {
+                for (const item of itens_faltando) {
+                    await db.query(
+                        'INSERT INTO recebimento_divergencias (recebimento_id, tipo, codigo_referencia, quantidade) VALUES (?, ?, ?, ?)',
+                        [req.params.id, 'faltando', item.codigo, item.quantidade]
+                    );
+                }
+            }
+            
+            // Inserir itens sobrando
+            if (itens_sobrando && itens_sobrando.length > 0) {
+                for (const item of itens_sobrando) {
+                    await db.query(
+                        'INSERT INTO recebimento_divergencias (recebimento_id, tipo, codigo_referencia, quantidade) VALUES (?, ?, ?, ?)',
+                        [req.params.id, 'sobrando', item.codigo, item.quantidade]
+                    );
+                }
+            }
+        }
+        
+        res.json({ success: true, message: 'Recebimento registrado' });
+    } catch (error) {
+        console.error('Erro ao registrar recebimento:', error);
+        res.status(500).json({ error: 'Erro ao registrar recebimento' });
+    }
+});
+
+// POST - Resolver divergência (mudar situação para 'ok')
+app.post('/api/recebimentos/:id/resolver-divergencia', verificarToken, async (req, res) => {
+    try {
+        await db.query(`
+            UPDATE recebimentos_fabrica SET
+                situacao_recebimento = 'ok'
+            WHERE id = ? AND empresa_id = ?
+        `, [req.params.id, req.usuario.empresa_id]);
+        
+        res.json({ success: true, message: 'Divergência resolvida' });
+    } catch (error) {
+        console.error('Erro ao resolver divergência:', error);
+        res.status(500).json({ error: 'Erro ao resolver divergência' });
+    }
+});
+
+// POST - Conferir recebimento (mudar status para 'conferido')
+app.post('/api/recebimentos/:id/conferir', verificarToken, async (req, res) => {
+    try {
+        await db.query(`
+            UPDATE recebimentos_fabrica SET
+                status = 'conferido',
+                data_conferencia = NOW(),
+                usuario_conferencia_id = ?
+            WHERE id = ? AND empresa_id = ? AND status = 'recebido'
+        `, [req.usuario.id, req.params.id, req.usuario.empresa_id]);
+        
+        res.json({ success: true, message: 'Conferência registrada' });
+    } catch (error) {
+        console.error('Erro ao conferir recebimento:', error);
+        res.status(500).json({ error: 'Erro ao conferir recebimento' });
+    }
+});
+
+// POST - Confirmar chegada no destino final
+app.post('/api/recebimentos/:id/chegada-destino', verificarToken, async (req, res) => {
+    try {
+        await db.query(`
+            UPDATE recebimentos_fabrica SET
+                data_chegada_destino = NOW(),
+                usuario_chegada_destino_id = ?
+            WHERE id = ? AND empresa_id = ? AND status = 'conferido'
+        `, [req.usuario.id, req.params.id, req.usuario.empresa_id]);
+        
+        res.json({ success: true, message: 'Chegada no destino confirmada' });
+    } catch (error) {
+        console.error('Erro ao confirmar chegada no destino:', error);
+        res.status(500).json({ error: 'Erro ao confirmar chegada no destino' });
+    }
+});
+
+// POST - Liberar reserva (mudar reserva para 'liberado')
+app.post('/api/recebimentos/:id/liberar', verificarToken, async (req, res) => {
+    try {
+        await db.query(`
+            UPDATE recebimentos_fabrica SET
+                reserva = 'liberado',
+                data_liberacao = NOW(),
+                usuario_liberacao_id = ?
+            WHERE id = ? AND empresa_id = ? AND reserva = 'pendente'
+        `, [req.usuario.id, req.params.id, req.usuario.empresa_id]);
+        
+        res.json({ success: true, message: 'Mercadoria liberada para venda' });
+    } catch (error) {
+        console.error('Erro ao liberar recebimento:', error);
+        res.status(500).json({ error: 'Erro ao liberar recebimento' });
+    }
+});
+
+// DELETE - Excluir recebimento
+app.delete('/api/recebimentos/:id', verificarToken, async (req, res) => {
+    try {
+        await db.query(
+            'DELETE FROM recebimentos_fabrica WHERE id = ? AND empresa_id = ?',
+            [req.params.id, req.usuario.empresa_id]
+        );
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Erro ao excluir recebimento:', error);
+        res.status(500).json({ error: 'Erro ao excluir recebimento' });
     }
 });
 

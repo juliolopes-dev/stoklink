@@ -329,7 +329,7 @@
                         window.location.hostname.includes('192.168') ||
                         window.location.protocol === 'file:';
         
-        const API_URL = isLocal ? 'http://localhost:3001' : window.location.origin;
+        const API_URL = isLocal ? `http://${window.location.hostname}:3001` : window.location.origin;
         
         console.log('🔧 Ambiente:', isLocal ? 'Desenvolvimento Local' : 'Produção');
         console.log('🌐 API URL:', API_URL);

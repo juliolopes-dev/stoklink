@@ -8,7 +8,7 @@ const isLocal = window.location.hostname === 'localhost' ||
                 window.location.hostname.includes('192.168') ||
                 window.location.protocol === 'file:';
 
-const API_URL = isLocal ? 'http://localhost:3001' : window.location.origin;
+const API_URL = isLocal ? `http://${window.location.hostname}:3001` : window.location.origin;
 
 // Função auxiliar para fazer requisições autenticadas
 async function apiFetch(endpoint, options = {}) {
@@ -160,13 +160,17 @@ document.addEventListener('DOMContentLoaded', function() {
     const views = {
         filiais: document.getElementById('filiais-view'),
         usuarios: document.getElementById('usuarios-view'),
-        tags: document.getElementById('tags-view')
+        tags: document.getElementById('tags-view'),
+        fornecedores: document.getElementById('fornecedores-view'),
+        transportadoras: document.getElementById('transportadoras-view')
     };
     
     const navButtons = {
         filiais: document.getElementById('btn-show-filiais'),
         usuarios: document.getElementById('btn-show-usuarios'),
-        tags: document.getElementById('btn-show-tags')
+        tags: document.getElementById('btn-show-tags'),
+        fornecedores: document.getElementById('btn-show-fornecedores'),
+        transportadoras: document.getElementById('btn-show-transportadoras')
     };
     
     // Funções de Navegação
@@ -419,6 +423,7 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('usuario-filial').value = user.filial_id || '';
             document.getElementById('usuario-role').value = user.role;
             document.getElementById('usuario-ativo').checked = user.ativo;
+            document.getElementById('usuario-acesso-recebimento').checked = user.acesso_recebimento || false;
             senhaField.value = '';
             senhaField.required = false;
             senhaHint.style.display = 'block';
@@ -426,6 +431,7 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             title.textContent = 'Novo Usuário';
             document.getElementById('form-usuario').reset();
+            document.getElementById('usuario-acesso-recebimento').checked = false;
             senhaField.required = true;
             senhaHint.style.display = 'none';
             ativoContainer.style.display = 'none';
@@ -442,7 +448,8 @@ document.addEventListener('DOMContentLoaded', function() {
             senha: document.getElementById('usuario-senha').value,
             filial_id: parseInt(document.getElementById('usuario-filial').value) || null,
             role: document.getElementById('usuario-role').value,
-            ativo: usuarioEditando ? document.getElementById('usuario-ativo').checked : true
+            ativo: usuarioEditando ? document.getElementById('usuario-ativo').checked : true,
+            acesso_recebimento: document.getElementById('usuario-acesso-recebimento').checked
         };
         
         if (!dados.nome || !dados.email) {
@@ -769,6 +776,439 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('btn-show-dashboard').addEventListener('click', () => {
         window.location.href = 'index.html';
     });
+    
+    // ========================================
+    // FORNECEDORES
+    // ========================================
+    
+    let fornecedores = [];
+    let fornecedorEditando = null;
+    
+    async function carregarFornecedores() {
+        try {
+            const response = await apiFetch('/api/fornecedores');
+            if (response.ok) {
+                fornecedores = await response.json();
+                renderizarFornecedores();
+            }
+        } catch (error) {
+            console.error('Erro ao carregar fornecedores:', error);
+        }
+    }
+    
+    function renderizarFornecedores() {
+        const container = document.getElementById('fornecedores-list');
+        if (!container) return;
+        
+        if (fornecedores.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 40px; color: #666;">
+                    <i data-lucide="factory" style="width: 48px; height: 48px; opacity: 0.3;"></i>
+                    <p style="margin-top: 15px;">Nenhum fornecedor cadastrado</p>
+                </div>
+            `;
+            lucide.createIcons();
+            return;
+        }
+        
+        let html = '<table class="admin-table"><thead><tr><th>Nome</th><th>CNPJ</th><th>Telefone</th><th>E-mail</th><th>Status</th><th>Ações</th></tr></thead><tbody>';
+        
+        fornecedores.forEach(f => {
+            html += `
+                <tr>
+                    <td><strong>${f.nome}</strong></td>
+                    <td>${f.cnpj || '-'}</td>
+                    <td>${f.telefone || '-'}</td>
+                    <td>${f.email || '-'}</td>
+                    <td><span class="status-badge ${f.ativo !== false ? 'ativo' : 'inativo'}">${f.ativo !== false ? 'Ativo' : 'Inativo'}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-secondary" onclick="editarFornecedor(${f.id})"><i data-lucide="edit"></i></button>
+                        <button class="btn btn-sm btn-danger" onclick="excluirFornecedor(${f.id})"><i data-lucide="trash-2"></i></button>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += '</tbody></table>';
+        container.innerHTML = html;
+        lucide.createIcons();
+    }
+    
+    function abrirModalFornecedor(fornecedor = null) {
+        fornecedorEditando = fornecedor;
+        const modal = document.getElementById('modal-fornecedor');
+        const titulo = document.getElementById('modal-fornecedor-title');
+        const ativoContainer = document.getElementById('fornecedor-ativo-container');
+        
+        document.getElementById('form-fornecedor').reset();
+        
+        if (fornecedor) {
+            titulo.textContent = 'Editar Fornecedor';
+            document.getElementById('fornecedor-nome').value = fornecedor.nome || '';
+            document.getElementById('fornecedor-cnpj').value = fornecedor.cnpj || '';
+            document.getElementById('fornecedor-telefone').value = fornecedor.telefone || '';
+            document.getElementById('fornecedor-email').value = fornecedor.email || '';
+            document.getElementById('fornecedor-endereco').value = fornecedor.endereco || '';
+            document.getElementById('fornecedor-ativo').checked = fornecedor.ativo !== false;
+            ativoContainer.style.display = 'block';
+        } else {
+            titulo.textContent = 'Novo Fornecedor';
+            ativoContainer.style.display = 'none';
+        }
+        
+        modal.classList.add('show');
+        lucide.createIcons();
+    }
+    
+    async function salvarFornecedor() {
+        const dados = {
+            nome: document.getElementById('fornecedor-nome').value.trim(),
+            cnpj: document.getElementById('fornecedor-cnpj').value.trim() || null,
+            telefone: document.getElementById('fornecedor-telefone').value.trim() || null,
+            email: document.getElementById('fornecedor-email').value.trim() || null,
+            endereco: document.getElementById('fornecedor-endereco').value.trim() || null,
+            ativo: document.getElementById('fornecedor-ativo').checked
+        };
+        
+        if (!dados.nome) {
+            await showAlert('Informe o nome do fornecedor', 'Erro', 'danger');
+            return;
+        }
+        
+        try {
+            let response;
+            if (fornecedorEditando) {
+                response = await apiFetch(`/api/fornecedores/${fornecedorEditando.id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(dados)
+                });
+            } else {
+                response = await apiFetch('/api/fornecedores', {
+                    method: 'POST',
+                    body: JSON.stringify(dados)
+                });
+            }
+            
+            if (response.ok) {
+                document.getElementById('modal-fornecedor').classList.remove('show');
+                await showAlert(fornecedorEditando ? 'Fornecedor atualizado!' : 'Fornecedor cadastrado!', 'Sucesso', 'success');
+                carregarFornecedores();
+            } else {
+                const error = await response.json();
+                await showAlert(error.error || 'Erro ao salvar', 'Erro', 'danger');
+            }
+        } catch (error) {
+            console.error('Erro:', error);
+            await showAlert('Erro ao salvar fornecedor', 'Erro', 'danger');
+        }
+    }
+    
+    window.editarFornecedor = function(id) {
+        const fornecedor = fornecedores.find(f => f.id === id);
+        if (fornecedor) abrirModalFornecedor(fornecedor);
+    };
+    
+    window.excluirFornecedor = async function(id) {
+        const confirmado = await showConfirm('Tem certeza que deseja excluir este fornecedor?', 'Confirmar Exclusão', 'danger');
+        if (!confirmado) return;
+        
+        try {
+            const response = await apiFetch(`/api/fornecedores/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                await showAlert('Fornecedor excluído!', 'Sucesso', 'success');
+                carregarFornecedores();
+            }
+        } catch (error) {
+            await showAlert('Erro ao excluir fornecedor', 'Erro', 'danger');
+        }
+    };
+    
+    // ========================================
+    // TRANSPORTADORAS
+    // ========================================
+    
+    let transportadoras = [];
+    let transportadoraEditando = null;
+    
+    async function carregarTransportadoras() {
+        try {
+            const response = await apiFetch('/api/transportadoras');
+            if (response.ok) {
+                transportadoras = await response.json();
+                renderizarTransportadoras();
+            }
+        } catch (error) {
+            console.error('Erro ao carregar transportadoras:', error);
+        }
+    }
+    
+    function renderizarTransportadoras() {
+        const container = document.getElementById('transportadoras-list');
+        if (!container) return;
+        
+        if (transportadoras.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 40px; color: #666;">
+                    <i data-lucide="truck" style="width: 48px; height: 48px; opacity: 0.3;"></i>
+                    <p style="margin-top: 15px;">Nenhuma transportadora cadastrada</p>
+                </div>
+            `;
+            lucide.createIcons();
+            return;
+        }
+        
+        let html = '<table class="admin-table"><thead><tr><th>Nome</th><th>CNPJ</th><th>Telefone</th><th>E-mail</th><th>Status</th><th>Ações</th></tr></thead><tbody>';
+        
+        transportadoras.forEach(t => {
+            html += `
+                <tr>
+                    <td><strong>${t.nome}</strong></td>
+                    <td>${t.cnpj || '-'}</td>
+                    <td>${t.telefone || '-'}</td>
+                    <td>${t.email || '-'}</td>
+                    <td><span class="status-badge ${t.ativo !== false ? 'ativo' : 'inativo'}">${t.ativo !== false ? 'Ativo' : 'Inativo'}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-secondary" onclick="editarTransportadora(${t.id})"><i data-lucide="edit"></i></button>
+                        <button class="btn btn-sm btn-danger" onclick="excluirTransportadora(${t.id})"><i data-lucide="trash-2"></i></button>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += '</tbody></table>';
+        container.innerHTML = html;
+        lucide.createIcons();
+    }
+    
+    function abrirModalTransportadora(transportadora = null) {
+        transportadoraEditando = transportadora;
+        const modal = document.getElementById('modal-transportadora');
+        const titulo = document.getElementById('modal-transportadora-title');
+        const ativoContainer = document.getElementById('transportadora-ativo-container');
+        
+        document.getElementById('form-transportadora').reset();
+        
+        if (transportadora) {
+            titulo.textContent = 'Editar Transportadora';
+            document.getElementById('transportadora-nome').value = transportadora.nome || '';
+            document.getElementById('transportadora-cnpj').value = transportadora.cnpj || '';
+            document.getElementById('transportadora-telefone').value = transportadora.telefone || '';
+            document.getElementById('transportadora-email').value = transportadora.email || '';
+            document.getElementById('transportadora-ativo').checked = transportadora.ativo !== false;
+            ativoContainer.style.display = 'block';
+        } else {
+            titulo.textContent = 'Nova Transportadora';
+            ativoContainer.style.display = 'none';
+        }
+        
+        modal.classList.add('show');
+        lucide.createIcons();
+    }
+    
+    async function salvarTransportadora() {
+        const dados = {
+            nome: document.getElementById('transportadora-nome').value.trim(),
+            cnpj: document.getElementById('transportadora-cnpj').value.trim() || null,
+            telefone: document.getElementById('transportadora-telefone').value.trim() || null,
+            email: document.getElementById('transportadora-email').value.trim() || null,
+            ativo: document.getElementById('transportadora-ativo').checked
+        };
+        
+        if (!dados.nome) {
+            await showAlert('Informe o nome da transportadora', 'Erro', 'danger');
+            return;
+        }
+        
+        try {
+            let response;
+            if (transportadoraEditando) {
+                response = await apiFetch(`/api/transportadoras/${transportadoraEditando.id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(dados)
+                });
+            } else {
+                response = await apiFetch('/api/transportadoras', {
+                    method: 'POST',
+                    body: JSON.stringify(dados)
+                });
+            }
+            
+            if (response.ok) {
+                document.getElementById('modal-transportadora').classList.remove('show');
+                await showAlert(transportadoraEditando ? 'Transportadora atualizada!' : 'Transportadora cadastrada!', 'Sucesso', 'success');
+                carregarTransportadoras();
+            } else {
+                const error = await response.json();
+                await showAlert(error.error || 'Erro ao salvar', 'Erro', 'danger');
+            }
+        } catch (error) {
+            console.error('Erro:', error);
+            await showAlert('Erro ao salvar transportadora', 'Erro', 'danger');
+        }
+    }
+    
+    window.editarTransportadora = function(id) {
+        const transportadora = transportadoras.find(t => t.id === id);
+        if (transportadora) abrirModalTransportadora(transportadora);
+    };
+    
+    window.excluirTransportadora = async function(id) {
+        const confirmado = await showConfirm('Tem certeza que deseja excluir esta transportadora?', 'Confirmar Exclusão', 'danger');
+        if (!confirmado) return;
+        
+        try {
+            const response = await apiFetch(`/api/transportadoras/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                await showAlert('Transportadora excluída!', 'Sucesso', 'success');
+                carregarTransportadoras();
+            }
+        } catch (error) {
+            await showAlert('Erro ao excluir transportadora', 'Erro', 'danger');
+        }
+    };
+    
+    // ========================================
+    // EVENT LISTENERS - FORNECEDORES E TRANSPORTADORAS
+    // ========================================
+    
+    document.getElementById('btn-show-fornecedores').addEventListener('click', () => {
+        showView('fornecedores');
+        carregarFornecedores();
+    });
+    
+    document.getElementById('btn-show-transportadoras').addEventListener('click', () => {
+        showView('transportadoras');
+        carregarTransportadoras();
+    });
+    
+    document.getElementById('btn-novo-fornecedor').addEventListener('click', () => abrirModalFornecedor());
+    document.getElementById('btn-nova-transportadora').addEventListener('click', () => abrirModalTransportadora());
+    
+    document.getElementById('modal-fornecedor-cancelar').addEventListener('click', () => {
+        document.getElementById('modal-fornecedor').classList.remove('show');
+    });
+    
+    document.getElementById('modal-fornecedor-salvar').addEventListener('click', salvarFornecedor);
+    
+    // ========================================
+    // IMPORTAÇÃO DE FORNECEDORES VIA EXCEL
+    // ========================================
+    
+    let dadosParaImportar = [];
+    
+    document.getElementById('btn-importar-fornecedores').addEventListener('click', () => {
+        dadosParaImportar = [];
+        document.getElementById('arquivo-fornecedores').value = '';
+        document.getElementById('preview-importacao').style.display = 'none';
+        document.getElementById('modal-importar-confirmar').disabled = true;
+        document.getElementById('modal-importar-fornecedores').classList.add('show');
+        lucide.createIcons();
+    });
+    
+    document.getElementById('modal-importar-cancelar').addEventListener('click', () => {
+        document.getElementById('modal-importar-fornecedores').classList.remove('show');
+    });
+    
+    document.getElementById('arquivo-fornecedores').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        try {
+            const data = await file.arrayBuffer();
+            const workbook = XLSX.read(data);
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(sheet);
+            
+            if (jsonData.length === 0) {
+                await showAlert('O arquivo está vazio ou não possui dados válidos', 'Erro', 'danger');
+                return;
+            }
+            
+            // Mapear colunas (COD, NOME, NOMEFANTASIA)
+            dadosParaImportar = jsonData.map(row => {
+                // Tentar encontrar as colunas (case insensitive)
+                const keys = Object.keys(row);
+                const getColunaValue = (nomes) => {
+                    for (const nome of nomes) {
+                        const key = keys.find(k => k.toUpperCase().trim() === nome.toUpperCase());
+                        if (key) return row[key];
+                    }
+                    return null;
+                };
+                
+                const codigo = getColunaValue(['COD', 'CODIGO', 'CÓDIGO', 'ID']);
+                const nome = getColunaValue(['NOME', 'RAZAOSOCIAL', 'RAZÃO SOCIAL', 'RAZAO SOCIAL']);
+                const nomeFantasia = getColunaValue(['NOMEFANTASIA', 'NOME FANTASIA', 'FANTASIA', 'NOME_FANTASIA']);
+                
+                return {
+                    codigo: codigo ? String(codigo).trim() : null,
+                    nome: nome ? String(nome).trim() : null,
+                    nome_fantasia: nomeFantasia ? String(nomeFantasia).trim() : null
+                };
+            }).filter(f => f.nome); // Filtrar apenas os que têm nome
+            
+            if (dadosParaImportar.length === 0) {
+                await showAlert('Nenhum fornecedor válido encontrado. Verifique se a coluna NOME existe.', 'Erro', 'danger');
+                return;
+            }
+            
+            // Mostrar preview
+            let previewHtml = '<table class="admin-table"><thead><tr><th>Código</th><th>Nome</th><th>Nome Fantasia</th></tr></thead><tbody>';
+            const maxPreview = Math.min(dadosParaImportar.length, 5);
+            for (let i = 0; i < maxPreview; i++) {
+                const f = dadosParaImportar[i];
+                previewHtml += `<tr><td>${f.codigo || '-'}</td><td>${f.nome}</td><td>${f.nome_fantasia || '-'}</td></tr>`;
+            }
+            previewHtml += '</tbody></table>';
+            
+            document.getElementById('preview-tabela').innerHTML = previewHtml;
+            document.getElementById('preview-total').textContent = `Total: ${dadosParaImportar.length} fornecedor(es) encontrado(s)`;
+            document.getElementById('preview-importacao').style.display = 'block';
+            document.getElementById('modal-importar-confirmar').disabled = false;
+            
+        } catch (error) {
+            console.error('Erro ao ler arquivo:', error);
+            await showAlert('Erro ao ler o arquivo Excel. Verifique se o formato está correto.', 'Erro', 'danger');
+        }
+    });
+    
+    document.getElementById('modal-importar-confirmar').addEventListener('click', async () => {
+        if (dadosParaImportar.length === 0) return;
+        
+        const btnImportar = document.getElementById('modal-importar-confirmar');
+        btnImportar.disabled = true;
+        btnImportar.textContent = 'Importando...';
+        
+        try {
+            const response = await apiFetch('/api/fornecedores/importar', {
+                method: 'POST',
+                body: JSON.stringify({ fornecedores: dadosParaImportar })
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                document.getElementById('modal-importar-fornecedores').classList.remove('show');
+                await showAlert(`Importação concluída!\n${result.importados} fornecedor(es) importado(s).${result.duplicados > 0 ? `\n${result.duplicados} já existiam.` : ''}`, 'Sucesso', 'success');
+                carregarFornecedores();
+            } else {
+                const error = await response.json();
+                await showAlert(error.error || 'Erro na importação', 'Erro', 'danger');
+            }
+        } catch (error) {
+            console.error('Erro:', error);
+            await showAlert('Erro ao importar fornecedores', 'Erro', 'danger');
+        } finally {
+            btnImportar.disabled = false;
+            btnImportar.textContent = 'Importar';
+        }
+    });
+    
+    document.getElementById('modal-transportadora-cancelar').addEventListener('click', () => {
+        document.getElementById('modal-transportadora').classList.remove('show');
+    });
+    
+    document.getElementById('modal-transportadora-salvar').addEventListener('click', salvarTransportadora);
     
     // ========================================
     // INICIALIZAÇÃO

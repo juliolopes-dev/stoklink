@@ -10,7 +10,8 @@ const isLocal = window.location.hostname === 'localhost' ||
                 window.location.hostname.includes('192.168') ||
                 window.location.protocol === 'file:';
 
-const API_URL = isLocal ? 'http://localhost:3001' : window.location.origin;
+// Usar o mesmo hostname que o usuário está acessando para evitar problemas de CORS
+const API_URL = isLocal ? `http://${window.location.hostname}:3001` : window.location.origin;
 
 console.log('🔧 Ambiente:', isLocal ? 'Desenvolvimento Local' : 'Produção');
 console.log('🌐 API URL:', API_URL);
@@ -30,10 +31,18 @@ async function apiFetch(endpoint, options = {}) {
     }
     
     try {
+        console.log(`🔄 Fetch: ${endpoint}`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s timeout (2 min)
+        
         const response = await fetch(`${API_URL}${endpoint}`, {
             ...options,
-            headers
+            headers,
+            signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
+        console.log(`✅ Fetch OK: ${endpoint} - Status: ${response.status}`);
         
         // Se token expirou ou inválido, fazer logout
         if (response.status === 401) {
@@ -45,7 +54,7 @@ async function apiFetch(endpoint, options = {}) {
         
         return response;
     } catch (error) {
-        console.error('Erro na requisição:', error);
+        console.error(`❌ Erro no fetch ${endpoint}:`, error);
         throw error;
     }
 }
@@ -94,10 +103,11 @@ function showAlert(message, title = 'Aviso', type = 'info') {
     });
 }
 
-let recebimentoModal;
-let recebimentoObservacaoInput;
-let recebimentoDivergenciaInput;
-let recebimentoBtnConfirmar;
+let transfRecebimentoModal;
+let transfRecebimentoObservacaoInput;
+let transfRecebimentoDivergenciaInput;
+let transfRecebimentoBtnConfirmar;
+let transfRecebimentoBtnCancelar;
 let recebimentoBtnCancelar;
 let formularioAlterado = false;
 let bloquearDeteccaoAlteracoes = false;
@@ -155,16 +165,16 @@ function showConfirm(message, title = 'Confirmação', type = 'warning') {
 }
 
 function solicitarDadosRecebimento() {
-    if (!recebimentoModal) {
+    if (!transfRecebimentoModal) {
         return Promise.resolve({ observacao: '', adicionarDivergencia: false });
     }
 
     return new Promise((resolve) => {
-        const modal = recebimentoModal;
-        const campoObservacao = recebimentoObservacaoInput;
-        const checkboxDivergencia = recebimentoDivergenciaInput;
-        const btnConfirmar = recebimentoBtnConfirmar;
-        const btnCancelar = recebimentoBtnCancelar;
+        const modal = transfRecebimentoModal;
+        const campoObservacao = transfRecebimentoObservacaoInput;
+        const checkboxDivergencia = transfRecebimentoDivergenciaInput;
+        const btnConfirmar = transfRecebimentoBtnConfirmar;
+        const btnCancelar = transfRecebimentoBtnCancelar;
 
         if (campoObservacao) campoObservacao.value = '';
         if (checkboxDivergencia) checkboxDivergencia.checked = false;
@@ -264,12 +274,26 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     }
     
+    // Mostrar botão de recebimento se tiver permissão ou for admin
+    const btnRecebimento = document.getElementById('btn-show-recebimento');
+    if (btnRecebimento) {
+        if (usuario.role === 'admin' || usuario.acesso_recebimento) {
+            btnRecebimento.style.display = 'flex';
+        } else {
+            btnRecebimento.style.display = 'none';
+        }
+    }
+    
     // --- Elementos da UI ---
     const views = { 
         dashboard: document.getElementById('dashboard-view'), 
         cadastro: document.getElementById('cadastro-view'), 
         visualizacao: document.getElementById('visualizacao-view'), 
         detalhe: document.getElementById('detalhe-view'),
+        // Views de Recebimento de Fábrica (podem não existir se usuário não tem acesso)
+        recebimentoFabrica: document.getElementById('recebimento-fabrica-view'),
+        recebimentoCadastro: document.getElementById('recebimento-cadastro-view'),
+        recebimentoDetalhe: document.getElementById('recebimento-detalhe-view'),
     };
     async function confirmarSaidaCadastro() {
         const cadastroVisivel = views.cadastro && views.cadastro.style.display !== 'none';
@@ -300,10 +324,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     const transferListContainer = document.getElementById('transfer-list-container');
     const dashboardTransferList = document.getElementById('dashboard-transfer-list');
     const btnVoltarLista = document.getElementById('btn-voltar-lista');
-    recebimentoModal = document.getElementById('recebimento-modal');
-    recebimentoObservacaoInput = document.getElementById('recebimento-observacao');
-    recebimentoDivergenciaInput = document.getElementById('recebimento-divergencia');
-    recebimentoBtnConfirmar = document.getElementById('recebimento-btn-confirmar');
+    transfRecebimentoModal = document.getElementById('transf-recebimento-modal');
+    transfRecebimentoObservacaoInput = document.getElementById('transf-recebimento-observacao');
+    transfRecebimentoDivergenciaInput = document.getElementById('transf-recebimento-divergencia');
+    transfRecebimentoBtnConfirmar = document.getElementById('transf-recebimento-btn-confirmar');
+    transfRecebimentoBtnCancelar = document.getElementById('transf-recebimento-btn-cancelar');
     recebimentoBtnCancelar = document.getElementById('recebimento-btn-cancelar');
     if (form) {
         form.addEventListener('input', marcarFormularioAlterado);
@@ -377,8 +402,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // --- Funções de Navegação ---
     function showView(viewName) {
-        Object.values(views).forEach(view => view.style.display = 'none');
-        views[viewName].style.display = 'block';
+        Object.values(views).forEach(view => { if (view) view.style.display = 'none'; });
+        if (views[viewName]) views[viewName].style.display = 'block';
         Object.values(navButtons).forEach(btn => btn.classList.remove('active'));
         if(navButtons[viewName]) navButtons[viewName].classList.add('active');
         
@@ -1952,18 +1977,28 @@ document.addEventListener('DOMContentLoaded', async function() {
     // --- Carregar dados iniciais ---
     async function carregarDadosIniciais() {
         try {
+            console.log('🚀 Iniciando carregamento de dados...');
             showLoading('Carregando dados...');
+            console.log('📍 Carregando filiais...');
             await carregarFiliais();
+            console.log('📍 Carregando tags...');
             await carregarTags();
+            console.log('📍 Carregando transferências...');
             await carregarTransferencias();
-        } catch (error) {
-            console.error('Erro ao carregar dados iniciais:', error);
-            await showAlert('Erro ao carregar informacoes iniciais. Tente atualizar a pagina.', 'Erro', 'danger');
-        } finally {
+            console.log('✅ Dados carregados com sucesso!');
             hideLoading();
-            if (novoItemCodigo) novoItemCodigo.focus();
+        } catch (error) {
+            console.error('❌ Erro ao carregar dados iniciais:', error);
+            hideLoading();
+            showAlert('Erro ao carregar informacoes iniciais. Tente atualizar a pagina.', 'Erro', 'danger');
         }
+        if (novoItemCodigo) novoItemCodigo.focus();
     }
+
+    // Timeout de segurança para esconder loading após 10 segundos
+    setTimeout(() => {
+        hideLoading();
+    }, 10000);
 
     await carregarDadosIniciais();
 
@@ -1981,13 +2016,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     // --- Carregar Transferências da API ---
     async function carregarTransferencias(mostrarLoading = false) {
         try {
+            console.log('📍 [1] Iniciando carregarTransferencias...');
             if (mostrarLoading) {
                 showLoading('Atualizando transferências...');
             }
+            console.log('📍 [2] Fazendo fetch...');
             const response = await apiFetch('/api/transferencias');
+            console.log('📍 [3] Response recebido:', response.status);
             
             if (response.ok) {
+                console.log('📍 [4] Parseando JSON...');
                 transferencias = await response.json();
+                console.log('📦 Transferências carregadas:', transferencias.length);
                 transferenciasCarregadas = true;
                 ultimaAtualizacaoTransferencias = Date.now();
                 
@@ -2007,19 +2047,20 @@ document.addEventListener('DOMContentLoaded', async function() {
                 });
                 
                 nextId = maiorSequencial + 1;
-                
+                console.log('📍 [5] Atualizando dashboard...');
                 updateDashboard();
+                console.log('📍 [6] Dashboard atualizado!');
 
-                if (views.visualizacao.style.display !== 'none') {
+                if (views.visualizacao && views.visualizacao.style.display !== 'none') {
                     aplicarFiltros();
                 }
+                console.log('📍 [7] Concluído!');
             } else {
-                const error = await response.json();
-                await showAlert(error.error || 'Erro ao carregar transferências', 'Erro', 'danger');
+                const errorData = await response.json();
+                console.error('Erro ao carregar transferências:', errorData);
             }
         } catch (error) {
-            console.error('Erro ao carregar transferências:', error);
-            await showAlert('Erro de conexão com o servidor', 'Erro', 'danger');
+            console.error('❌ Erro ao carregar transferências:', error);
         } finally {
             if (mostrarLoading) {
                 hideLoading();
@@ -2398,6 +2439,1254 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         }
     }, INTERVALO_ATUALIZACAO_MS);
+
+    // ========================================
+    // MÓDULO: RECEBIMENTO DE FÁBRICA
+    // ========================================
+    
+    // Dados do módulo
+    let recebimentos = [];
+    let fornecedores = [];
+    let transportadoras = [];
+    let filiaisRecebimento = []; // Filiais para o módulo de recebimento
+    let recebimentoEmEdicao = null;
+    let modoRegistroChegada = false; // true = registrar chegada, false = cadastrar NF
+    
+    // Elementos do DOM - Recebimento
+    const btnShowRecebimento = document.getElementById('btn-show-recebimento');
+    const viewRecebimentoFabrica = document.getElementById('recebimento-fabrica-view');
+    const viewRecebimentoCadastro = document.getElementById('recebimento-cadastro-view');
+    const viewRecebimentoDetalhe = document.getElementById('recebimento-detalhe-view');
+    const viewRegistrarChegada = document.getElementById('registrar-chegada-view');
+    
+    // Verificar se o módulo está disponível
+    if (btnShowRecebimento && viewRecebimentoFabrica) {
+        console.log('📦 Módulo Recebimento de Fábrica disponível');
+        
+        // Botão do menu lateral
+        btnShowRecebimento.addEventListener('click', async () => {
+            if (await confirmarSaidaCadastro()) {
+                await carregarRecebimentos();
+                showRecebimentoView('lista');
+            }
+        });
+        
+        // Botão Cadastrar NF (Compras)
+        const btnCadastrarNF = document.getElementById('btn-cadastrar-nf');
+        if (btnCadastrarNF) {
+            btnCadastrarNF.addEventListener('click', () => {
+                recebimentoEmEdicao = null;
+                modoRegistroChegada = false;
+                limparFormularioRecebimento();
+                // Atualizar título para modo Cadastro NF
+                const titulo = document.getElementById('receb-cadastro-titulo');
+                const subtitulo = document.getElementById('receb-cadastro-subtitulo');
+                if (titulo) titulo.innerHTML = '<i data-lucide="file-plus" style="width: 28px; height: 28px; margin-right: 10px;"></i>Cadastrar NF';
+                if (subtitulo) subtitulo.textContent = 'Cadastre a NF antes da mercadoria chegar (setor de Compras).';
+                showRecebimentoView('cadastro');
+            });
+        }
+        
+        // Botão Registrar Chegada
+        const btnRegistrarChegada = document.getElementById('btn-registrar-chegada');
+        if (btnRegistrarChegada) {
+            btnRegistrarChegada.addEventListener('click', () => {
+                showRecebimentoView('chegada');
+                renderizarNFsAguardando();
+            });
+        }
+        
+        // Botão Voltar da tela de chegada
+        const btnVoltarChegada = document.getElementById('btn-voltar-chegada');
+        if (btnVoltarChegada) {
+            btnVoltarChegada.addEventListener('click', async () => {
+                await carregarRecebimentos();
+                showRecebimentoView('lista');
+            });
+        }
+        
+        // Botão NF Não Cadastrada (registrar nova na hora)
+        const btnNFNaoCadastrada = document.getElementById('btn-nf-nao-cadastrada');
+        if (btnNFNaoCadastrada) {
+            btnNFNaoCadastrada.addEventListener('click', () => {
+                recebimentoEmEdicao = null;
+                modoRegistroChegada = true;
+                limparFormularioRecebimento();
+                // Atualizar título para modo Registro de Chegada
+                const titulo = document.getElementById('receb-cadastro-titulo');
+                const subtitulo = document.getElementById('receb-cadastro-subtitulo');
+                if (titulo) titulo.innerHTML = '<i data-lucide="package-check" style="width: 28px; height: 28px; margin-right: 10px;"></i>Registrar Chegada (NF não cadastrada)';
+                if (subtitulo) subtitulo.textContent = 'A NF não estava cadastrada. Preencha os dados e registre a chegada.';
+                showRecebimentoView('cadastro');
+            });
+        }
+        
+        // Botão Buscar NF
+        const btnBuscarNF = document.getElementById('btn-buscar-nf');
+        if (btnBuscarNF) {
+            btnBuscarNF.addEventListener('click', buscarNFPorNumero);
+        }
+        
+        // Enter no campo de busca
+        const inputBuscaNF = document.getElementById('busca-nf-numero');
+        if (inputBuscaNF) {
+            inputBuscaNF.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    buscarNFPorNumero();
+                }
+            });
+        }
+        
+        // Botão Cancelar do cadastro
+        const btnCancelarRecebimento = document.getElementById('btn-cancelar-recebimento');
+        if (btnCancelarRecebimento) {
+            btnCancelarRecebimento.addEventListener('click', async () => {
+                await carregarRecebimentos();
+                showRecebimentoView('lista');
+            });
+        }
+        
+        // Botão Voltar do detalhe
+        const btnVoltarRecebimentos = document.getElementById('btn-voltar-recebimentos');
+        if (btnVoltarRecebimentos) {
+            btnVoltarRecebimentos.addEventListener('click', async () => {
+                await carregarRecebimentos();
+                showRecebimentoView('lista');
+            });
+        }
+        
+        // Botão Atualizar
+        const btnAtualizarRecebimentos = document.getElementById('btn-atualizar-recebimentos');
+        if (btnAtualizarRecebimentos) {
+            btnAtualizarRecebimentos.addEventListener('click', async () => {
+                await carregarRecebimentos();
+                renderizarListaRecebimentos();
+            });
+        }
+        
+        // Filtros automáticos - aplicar ao mudar qualquer filtro
+        const filtrosReceb = [
+            'receb-filtro-status',
+            'receb-filtro-reserva', 
+            'receb-filtro-urgencia',
+            'receb-filtro-destino',
+            'receb-filtro-fornecedor'
+        ];
+        filtrosReceb.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('change', () => renderizarListaRecebimentos());
+            }
+        });
+        
+        // Filtro de NF - aplicar ao digitar (com debounce)
+        const filtroNF = document.getElementById('receb-filtro-nf');
+        if (filtroNF) {
+            let timeoutNF;
+            filtroNF.addEventListener('input', () => {
+                clearTimeout(timeoutNF);
+                timeoutNF = setTimeout(() => renderizarListaRecebimentos(), 300);
+            });
+        }
+        
+        // Botão Limpar Filtros
+        const btnLimparFiltros = document.getElementById('btn-limpar-filtros-receb');
+        if (btnLimparFiltros) {
+            btnLimparFiltros.addEventListener('click', () => {
+                document.getElementById('receb-filtro-status').value = '';
+                document.getElementById('receb-filtro-reserva').value = '';
+                document.getElementById('receb-filtro-urgencia').value = '';
+                document.getElementById('receb-filtro-destino').value = '';
+                document.getElementById('receb-filtro-nf').value = '';
+                document.getElementById('receb-filtro-fornecedor').value = '';
+                renderizarListaRecebimentos();
+            });
+        }
+        
+        // Formulário de Recebimento
+        const formRecebimento = document.getElementById('recebimento-form');
+        if (formRecebimento) {
+            formRecebimento.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await salvarRecebimento();
+            });
+        }
+        
+        // Carregar fornecedores e transportadoras ao iniciar
+        carregarFornecedoresETransportadoras();
+    }
+    
+    // Função para mostrar views do recebimento
+    function showRecebimentoView(tipo) {
+        // Esconder todas as views principais
+        Object.values(views).forEach(view => { if (view) view.style.display = 'none'; });
+        Object.values(navButtons).forEach(btn => btn.classList.remove('active'));
+        
+        // Esconder views de recebimento
+        if (viewRecebimentoFabrica) viewRecebimentoFabrica.style.display = 'none';
+        if (viewRecebimentoCadastro) viewRecebimentoCadastro.style.display = 'none';
+        if (viewRecebimentoDetalhe) viewRecebimentoDetalhe.style.display = 'none';
+        if (viewRegistrarChegada) viewRegistrarChegada.style.display = 'none';
+        
+        // Mostrar view específica
+        if (tipo === 'lista' && viewRecebimentoFabrica) {
+            viewRecebimentoFabrica.style.display = 'block';
+            currentView = 'recebimentoFabrica';
+            renderizarListaRecebimentos();
+        } else if (tipo === 'cadastro' && viewRecebimentoCadastro) {
+            viewRecebimentoCadastro.style.display = 'block';
+            currentView = 'recebimentoCadastro';
+            popularSelectsRecebimento();
+        } else if (tipo === 'detalhe' && viewRecebimentoDetalhe) {
+            viewRecebimentoDetalhe.style.display = 'block';
+            currentView = 'recebimentoDetalhe';
+        } else if (tipo === 'chegada' && viewRegistrarChegada) {
+            viewRegistrarChegada.style.display = 'block';
+            currentView = 'registrarChegada';
+            document.getElementById('busca-nf-numero').value = '';
+            document.getElementById('resultado-busca-nf').style.display = 'none';
+        }
+        
+        // Marcar botão como ativo
+        if (btnShowRecebimento) btnShowRecebimento.classList.add('active');
+        
+        lucide.createIcons();
+    }
+    
+    // Carregar fornecedores e transportadoras
+    async function carregarFornecedoresETransportadoras() {
+        try {
+            const [resFornecedores, resTransportadoras] = await Promise.all([
+                apiFetch('/api/fornecedores'),
+                apiFetch('/api/transportadoras')
+            ]);
+            
+            if (resFornecedores.ok) {
+                fornecedores = await resFornecedores.json();
+            }
+            if (resTransportadoras.ok) {
+                transportadoras = await resTransportadoras.json();
+            }
+            
+            console.log(`📦 Fornecedores: ${fornecedores.length}, Transportadoras: ${transportadoras.length}`);
+        } catch (error) {
+            console.error('Erro ao carregar fornecedores/transportadoras:', error);
+        }
+    }
+    
+    // Popular selects do formulário
+    function popularSelectsRecebimento() {
+        const datalistFornecedor = document.getElementById('lista-fornecedores');
+        const datalistTransportadora = document.getElementById('lista-transportadoras');
+        const selectFilialChegada = document.getElementById('receb-filial-chegada');
+        const selectFilialDestino = document.getElementById('receb-filial-destino');
+        
+        // Fornecedores (datalist com busca)
+        if (datalistFornecedor) {
+            datalistFornecedor.innerHTML = '';
+            fornecedores.filter(f => f.ativo !== false).forEach(f => {
+                datalistFornecedor.innerHTML += `<option value="${f.nome}" data-id="${f.id}">`;
+            });
+        }
+        
+        // Transportadoras (datalist com busca)
+        if (datalistTransportadora) {
+            datalistTransportadora.innerHTML = '';
+            transportadoras.filter(t => t.ativo !== false).forEach(t => {
+                datalistTransportadora.innerHTML += `<option value="${t.nome}" data-id="${t.id}">`;
+            });
+        }
+        
+        // Filiais (usar as mesmas do sistema de transferências)
+        const selectOrigem = document.getElementById('origem');
+        if (selectOrigem && selectFilialChegada) {
+            selectFilialChegada.innerHTML = '<option value="">Onde a mercadoria vai chegar?</option>';
+            Array.from(selectOrigem.options).forEach(opt => {
+                if (opt.value) {
+                    selectFilialChegada.innerHTML += `<option value="${opt.value}">${opt.text}</option>`;
+                }
+            });
+        }
+        
+        if (selectOrigem && selectFilialDestino) {
+            selectFilialDestino.innerHTML = '<option value="">Para qual filial é essa mercadoria?</option>';
+            Array.from(selectOrigem.options).forEach(opt => {
+                if (opt.value) {
+                    selectFilialDestino.innerHTML += `<option value="${opt.value}">${opt.text}</option>`;
+                }
+            });
+        }
+        
+        // Se estiver editando, preencher valores
+        if (recebimentoEmEdicao) {
+            preencherFormularioRecebimento(recebimentoEmEdicao);
+        }
+    }
+    
+    // Função auxiliar para obter ID do fornecedor pelo nome
+    function getFornecedorIdByNome(nome) {
+        const f = fornecedores.find(f => f.nome === nome);
+        return f ? f.id : null;
+    }
+    
+    // Função auxiliar para obter ID da transportadora pelo nome
+    function getTransportadoraIdByNome(nome) {
+        const t = transportadoras.find(t => t.nome === nome);
+        return t ? t.id : null;
+    }
+    
+    // Buscar NF por número
+    function buscarNFPorNumero() {
+        const numero = document.getElementById('busca-nf-numero').value.trim();
+        const container = document.getElementById('resultado-busca-nf');
+        
+        if (!numero) {
+            container.style.display = 'none';
+            return;
+        }
+        
+        // Buscar nas NFs cadastradas
+        const nfEncontrada = recebimentos.find(r => 
+            r.numero_nota_fiscal && r.numero_nota_fiscal.toLowerCase().includes(numero.toLowerCase())
+        );
+        
+        if (nfEncontrada) {
+            const fornecedor = fornecedores.find(f => f.id === nfEncontrada.fornecedor_id);
+            const statusLabel = {
+                'aguardando': '🟡 Aguardando Chegada',
+                'recebido': '🔵 Recebido',
+                'conferido': '🟢 Conferido'
+            };
+            
+            container.innerHTML = `
+                <div style="background: #d4edda; padding: 15px; border-radius: 8px; border: 1px solid #c3e6cb;">
+                    <h4 style="margin: 0 0 10px 0; color: #155724;"><i data-lucide="check-circle"></i> NF Encontrada!</h4>
+                    <p><strong>NF:</strong> ${nfEncontrada.numero_nota_fiscal}</p>
+                    <p><strong>Fornecedor:</strong> ${fornecedor ? fornecedor.nome : 'Não informado'}</p>
+                    <p><strong>Status:</strong> ${statusLabel[nfEncontrada.status] || nfEncontrada.status}</p>
+                    <p><strong>Volumes:</strong> ${nfEncontrada.volumes || '-'}</p>
+                    <div style="margin-top: 15px;">
+                        ${nfEncontrada.status === 'aguardando' ? `
+                            <button class="btn btn-primary" onclick="registrarChegadaNF(${nfEncontrada.id})">
+                                <i data-lucide="package-check"></i> Registrar Chegada
+                            </button>
+                        ` : `
+                            <button class="btn btn-secondary" onclick="verDetalheRecebimento(${nfEncontrada.id})">
+                                <i data-lucide="eye"></i> Ver Detalhes
+                            </button>
+                        `}
+                    </div>
+                </div>
+            `;
+        } else {
+            container.innerHTML = `
+                <div style="background: #fff3cd; padding: 15px; border-radius: 8px; border: 1px solid #ffc107;">
+                    <h4 style="margin: 0 0 10px 0; color: #856404;"><i data-lucide="alert-circle"></i> NF Não Encontrada</h4>
+                    <p>Nenhuma NF com o número "<strong>${numero}</strong>" foi encontrada no sistema.</p>
+                    <p style="margin-top: 10px;">Você pode registrar a chegada mesmo assim clicando no botão abaixo.</p>
+                </div>
+            `;
+        }
+        
+        container.style.display = 'block';
+        lucide.createIcons();
+    }
+    
+    // Renderizar lista de NFs aguardando chegada
+    function renderizarNFsAguardando() {
+        const container = document.getElementById('lista-nfs-aguardando');
+        if (!container) return;
+        
+        const nfsAguardando = recebimentos.filter(r => r.status === 'aguardando');
+        
+        if (nfsAguardando.length === 0) {
+            container.innerHTML = `
+                <div style="text-align: center; padding: 30px; color: #666;">
+                    <i data-lucide="inbox" style="width: 48px; height: 48px; opacity: 0.3;"></i>
+                    <p style="margin-top: 15px;">Nenhuma NF aguardando chegada</p>
+                </div>
+            `;
+            lucide.createIcons();
+            return;
+        }
+        
+        let html = '';
+        nfsAguardando.forEach(nf => {
+            const fornecedor = fornecedores.find(f => f.id === nf.fornecedor_id);
+            const dataPrevista = nf.data_prevista ? new Date(nf.data_prevista).toLocaleDateString('pt-BR') : 'Não informada';
+            
+            html += `
+                <div class="list-item" style="display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid #eee;">
+                    <div>
+                        <strong style="font-size: 16px;">NF: ${nf.numero_nota_fiscal || nf.codigo}</strong>
+                        <p style="margin: 5px 0 0 0; color: #666; font-size: 14px;">
+                            ${fornecedor ? fornecedor.nome : 'Fornecedor não informado'} | 
+                            ${nf.volumes || 0} volume(s) | 
+                            Previsão: ${dataPrevista}
+                            ${nf.urgente ? ' | <span style="color: #e74c3c; font-weight: bold;">🔥 URGENTE</span>' : ''}
+                        </p>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="registrarChegadaNF(${nf.id})">
+                        <i data-lucide="package-check"></i> Registrar Chegada
+                    </button>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+        lucide.createIcons();
+    }
+    
+    // Registrar chegada de uma NF específica - abre o modal
+    window.registrarChegadaNF = async function(id) {
+        abrirModalRecebimento(id);
+    };
+    
+    // Carregar recebimentos da API
+    async function carregarRecebimentos() {
+        try {
+            showLoading('Carregando recebimentos...');
+            
+            // Carregar filiais se ainda não carregou
+            if (filiaisRecebimento.length === 0) {
+                const respFiliais = await apiFetch('/api/filiais');
+                if (respFiliais.ok) {
+                    filiaisRecebimento = await respFiliais.json();
+                    console.log(`🏢 Filiais carregadas: ${filiaisRecebimento.length}`);
+                }
+            }
+            
+            const response = await apiFetch('/api/recebimentos');
+            if (response.ok) {
+                recebimentos = await response.json();
+                console.log(`📦 Recebimentos carregados: ${recebimentos.length}`);
+                atualizarDashboardRecebimento();
+            }
+        } catch (error) {
+            console.error('Erro ao carregar recebimentos:', error);
+        } finally {
+            hideLoading();
+        }
+    }
+    
+    // Atualizar cards do dashboard de recebimento
+    function atualizarDashboardRecebimento() {
+        const aguardando = recebimentos.filter(r => r.status === 'aguardando').length;
+        const recebido = recebimentos.filter(r => r.status === 'recebido').length;
+        const conferido = recebimentos.filter(r => r.status === 'conferido').length;
+        const bloqueados = recebimentos.filter(r => r.reserva === 'pendente').length;
+        
+        const elAguardando = document.getElementById('receb-summary-aguardando');
+        const elRecebido = document.getElementById('receb-summary-recebido');
+        const elConferido = document.getElementById('receb-summary-conferido');
+        const elBloqueado = document.getElementById('receb-summary-bloqueado');
+        
+        if (elAguardando) elAguardando.textContent = aguardando;
+        if (elRecebido) elRecebido.textContent = recebido;
+        if (elConferido) elConferido.textContent = conferido;
+        if (elBloqueado) elBloqueado.textContent = bloqueados;
+    }
+    
+    // Aplicar filtros nos recebimentos
+    function aplicarFiltrosRecebimentos() {
+        const status = document.getElementById('receb-filtro-status')?.value || '';
+        const reserva = document.getElementById('receb-filtro-reserva')?.value || '';
+        const urgencia = document.getElementById('receb-filtro-urgencia')?.value || '';
+        const destino = document.getElementById('receb-filtro-destino')?.value || '';
+        const nf = document.getElementById('receb-filtro-nf')?.value?.toLowerCase() || '';
+        const fornecedor = document.getElementById('receb-filtro-fornecedor')?.value || '';
+        
+        return recebimentos.filter(rec => {
+            if (status && rec.status !== status) return false;
+            if (reserva && rec.reserva !== reserva) return false;
+            if (urgencia === 'distribuicao_imediata' && !rec.urgente) return false;
+            if (urgencia === 'estocagem' && rec.urgente) return false;
+            if (destino && rec.filial_destino_id != destino) return false;
+            if (nf && !rec.numero_nota_fiscal?.toLowerCase().includes(nf)) return false;
+            if (fornecedor && rec.fornecedor_id != fornecedor) return false;
+            return true;
+        });
+    }
+    
+    // Renderizar lista de recebimentos
+    function renderizarListaRecebimentos() {
+        const container = document.getElementById('recebimentos-lista');
+        if (!container) return;
+        
+        const recebimentosFiltrados = aplicarFiltrosRecebimentos();
+        const nfBusca = document.getElementById('receb-filtro-nf')?.value?.toLowerCase().trim() || '';
+        
+        if (recebimentosFiltrados.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i data-lucide="package-x"></i>
+                    <p>Nenhum recebimento cadastrado</p>
+                    <button class="btn btn-primary" onclick="document.getElementById('btn-cadastrar-nf').click()">
+                        <i data-lucide="plus"></i> Cadastrar NF
+                    </button>
+                </div>
+            `;
+            lucide.createIcons();
+            return;
+        }
+        
+        let html = `
+            <table class="transfer-table">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>NF</th>
+                        <th>Fornecedor</th>
+                        <th>Filial Destino</th>
+                        <th>Onde Chegou</th>
+                        <th>Urgência</th>
+                        <th>Status</th>
+                        <th>Situação</th>
+                        <th>Reserva</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+        
+        recebimentosFiltrados.forEach(rec => {
+            // Verificar se precisa ir para outra filial
+            const precisaTransferir = rec.filial_destino_id && rec.filial_recebimento_id && 
+                                      rec.filial_destino_id !== rec.filial_recebimento_id;
+            
+            // Status com lógica de transferência
+            let statusClass, statusText;
+            if (rec.status === 'aguardando') {
+                statusClass = 'status-pending';
+                statusText = 'Aguardando';
+            } else if (rec.status === 'recebido') {
+                statusClass = 'status-transit';
+                statusText = 'Recebido';
+            } else if (rec.status === 'conferido' && precisaTransferir && !rec.data_chegada_destino) {
+                statusClass = 'status-transit';
+                statusText = 'Em Trânsito';
+            } else if (rec.status === 'conferido' && rec.data_chegada_destino) {
+                statusClass = 'status-completed';
+                statusText = 'Entregue';
+            } else {
+                statusClass = 'status-completed';
+                statusText = 'Conferido';
+            }
+            
+            // Situação do recebimento
+            const situacaoMap = {
+                'ok': { class: 'status-completed', text: '✅ OK' },
+                'divergencia': { class: 'status-pending', text: '⚠️ Divergência' },
+                'faltando': { class: 'status-pending', text: '⚠️ Faltando' },
+                'sobrando': { class: 'status-transit', text: '📦 Sobrando' },
+                'avariada': { class: 'status-danger', text: '❌ Avariada' }
+            };
+            const situacao = situacaoMap[rec.situacao_recebimento] || { class: '', text: '-' };
+            
+            // Volumes: esperados vs recebidos
+            let volumesDisplay = rec.volumes || '-';
+            if (rec.volumes_recebidos && rec.volumes) {
+                if (rec.volumes_recebidos !== rec.volumes) {
+                    volumesDisplay = `<span style="color: #e74c3c;">${rec.volumes_recebidos}/${rec.volumes}</span>`;
+                } else {
+                    volumesDisplay = `${rec.volumes_recebidos}/${rec.volumes}`;
+                }
+            } else if (rec.volumes_recebidos) {
+                volumesDisplay = rec.volumes_recebidos;
+            }
+            
+            // Onde chegou (filial real de recebimento)
+            const filialRecebimento = rec.filial_recebimento_id ? 
+                filiaisRecebimento.find(f => f.id === rec.filial_recebimento_id)?.nome || '-' : '-';
+            
+            // Verificar se a NF corresponde à busca para destacar
+            const nfMatch = nfBusca && rec.numero_nota_fiscal && rec.numero_nota_fiscal.toLowerCase().includes(nfBusca);
+            const highlightStyle = nfMatch ? 'background: linear-gradient(90deg, #fff3cd, #ffeeba); box-shadow: 0 0 10px rgba(255, 193, 7, 0.5);' : '';
+            
+            html += `
+                <tr class="${rec.urgente ? 'urgente-row' : ''}" style="${highlightStyle}">
+                    <td><strong>${rec.codigo}</strong></td>
+                    <td>${nfMatch ? `<span style="background: #ffc107; padding: 2px 6px; border-radius: 4px; font-weight: bold;">${rec.numero_nota_fiscal}</span>` : (rec.numero_nota_fiscal || '-')}</td>
+                    <td>${rec.fornecedor_nome || 'Não informado'}</td>
+                    <td>${rec.filial_destino_nome || rec.filial_chegada_nome || '-'}</td>
+                    <td>${filialRecebimento}</td>
+                    <td>${rec.urgente ? '<span class="status-badge status-danger">🔥 Urgente</span>' : '<span class="status-badge status-completed">Normal</span>'}</td>
+                    <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                    <td>${rec.status !== 'aguardando' ? `<span class="status-badge ${situacao.class}">${situacao.text}</span>` : '-'}</td>
+                    <td>${rec.reserva === 'pendente' ? '<span class="status-badge status-pending">🔴 Bloqueada</span>' : '<span class="status-badge status-completed">🟢 Liberada</span>'}</td>
+                    <td>
+                        <div style="display: flex; gap: 5px;">
+                            <button class="btn btn-sm btn-info" onclick="verDetalheRecebimento(${rec.id})" title="Ver detalhes">
+                                <i data-lucide="eye"></i>
+                            </button>
+                            ${rec.status === 'aguardando' ? `
+                                <button class="btn btn-sm btn-success" onclick="registrarChegadaNF(${rec.id})" title="Registrar chegada">
+                                    <i data-lucide="package-check"></i>
+                                </button>
+                                <button class="btn btn-sm btn-secondary" onclick="editarRecebimento(${rec.id})" title="Editar">
+                                    <i data-lucide="edit"></i>
+                                </button>
+                            ` : ''}
+                            ${rec.status === 'recebido' ? `
+                                <button class="btn btn-sm btn-primary" onclick="registrarConferencia(${rec.id})" title="Conferir">
+                                    <i data-lucide="clipboard-check"></i>
+                                </button>
+                            ` : ''}
+                            ${rec.status === 'conferido' && precisaTransferir && !rec.data_chegada_destino ? `
+                                <button class="btn btn-sm btn-success" onclick="confirmarChegadaDestino(${rec.id})" title="Confirmar chegada no destino">
+                                    <i data-lucide="map-pin-check"></i>
+                                </button>
+                            ` : ''}
+                            ${rec.reserva === 'pendente' && rec.status === 'conferido' && (!precisaTransferir || rec.data_chegada_destino) ? `
+                                <button class="btn btn-sm btn-warning" onclick="liberarRecebimento(${rec.id})" title="Liberar reserva">
+                                    <i data-lucide="unlock"></i>
+                                </button>
+                            ` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                </tbody>
+            </table>
+        `;
+        
+        container.innerHTML = html;
+        lucide.createIcons();
+    }
+    
+    // Limpar formulário
+    function limparFormularioRecebimento() {
+        const form = document.getElementById('recebimento-form');
+        if (form) form.reset();
+        
+        const titulo = document.getElementById('receb-cadastro-titulo');
+        if (titulo) titulo.innerHTML = '<i data-lucide="plus-circle" style="width: 28px; height: 28px; margin-right: 10px;"></i>Novo Recebimento';
+        
+        lucide.createIcons();
+    }
+    
+    // Preencher formulário para edição
+    function preencherFormularioRecebimento(rec) {
+        const titulo = document.getElementById('receb-cadastro-titulo');
+        if (titulo) titulo.innerHTML = `<i data-lucide="edit" style="width: 28px; height: 28px; margin-right: 10px;"></i>Editar Recebimento ${rec.codigo}`;
+        
+        // Obter nomes pelo ID para preencher os inputs de busca
+        const fornecedor = fornecedores.find(f => f.id === rec.fornecedor_id);
+        const transportadora = transportadoras.find(t => t.id === rec.transportadora_id);
+        
+        const campos = {
+            'receb-fornecedor': fornecedor ? fornecedor.nome : '',
+            'receb-transportadora': transportadora ? transportadora.nome : '',
+            'receb-numero-nf': rec.numero_nota_fiscal,
+            'receb-filial-chegada': rec.filial_chegada_id,
+            'receb-filial-destino': rec.filial_destino_id,
+            'receb-qtd-volumes': rec.volumes,
+            'receb-data-prevista': rec.data_prevista ? rec.data_prevista.split('T')[0] : '',
+            'receb-observacoes': rec.observacoes,
+            'receb-urgencia': rec.urgente ? 'distribuicao_imediata' : 'estocagem',
+            'receb-reserva': rec.reserva
+        };
+        
+        Object.entries(campos).forEach(([id, valor]) => {
+            const el = document.getElementById(id);
+            if (el) {
+                if (el.type === 'checkbox') {
+                    el.checked = valor;
+                } else {
+                    el.value = valor || '';
+                }
+            }
+        });
+        
+        lucide.createIcons();
+    }
+    
+    // Salvar recebimento
+    async function salvarRecebimento() {
+        const urgenciaValue = document.getElementById('receb-urgencia')?.value;
+        const fornecedorNome = document.getElementById('receb-fornecedor')?.value;
+        const transportadoraNome = document.getElementById('receb-transportadora')?.value;
+        
+        const dados = {
+            fornecedor_id: getFornecedorIdByNome(fornecedorNome),
+            transportadora_id: getTransportadoraIdByNome(transportadoraNome),
+            numero_nota_fiscal: document.getElementById('receb-numero-nf')?.value || null,
+            filial_chegada_id: document.getElementById('receb-filial-chegada')?.value,
+            filial_destino_id: document.getElementById('receb-filial-destino')?.value || null,
+            volumes: parseInt(document.getElementById('receb-qtd-volumes')?.value) || 1,
+            peso_total: null, // Não tem campo de peso no formulário atual
+            data_prevista: document.getElementById('receb-data-prevista')?.value || null,
+            observacoes: document.getElementById('receb-observacoes')?.value || null,
+            urgente: urgenciaValue === 'distribuicao_imediata'
+        };
+        
+        // Validação
+        if (!dados.filial_chegada_id) {
+            await showAlert('Selecione a filial de chegada', 'Erro', 'danger');
+            return;
+        }
+        
+        try {
+            showLoading('Salvando...');
+            
+            let response;
+            if (recebimentoEmEdicao) {
+                response = await apiFetch(`/api/recebimentos/${recebimentoEmEdicao.id}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(dados)
+                });
+            } else {
+                response = await apiFetch('/api/recebimentos', {
+                    method: 'POST',
+                    body: JSON.stringify(dados)
+                });
+            }
+            
+            if (response.ok) {
+                const result = await response.json();
+                await showAlert(
+                    recebimentoEmEdicao ? 'Recebimento atualizado!' : `Recebimento ${result.codigo} cadastrado!`,
+                    'Sucesso',
+                    'success'
+                );
+                await carregarRecebimentos();
+                showRecebimentoView('lista');
+            } else {
+                const error = await response.json();
+                await showAlert(error.error || 'Erro ao salvar', 'Erro', 'danger');
+            }
+        } catch (error) {
+            console.error('Erro ao salvar recebimento:', error);
+            await showAlert('Erro ao salvar recebimento', 'Erro', 'danger');
+        } finally {
+            hideLoading();
+        }
+    }
+    
+    // Funções globais para os botões
+    window.verDetalheRecebimento = async function(id) {
+        const rec = recebimentos.find(r => r.id === id);
+        if (!rec) return;
+        
+        // Preencher campos de detalhes usando os IDs do HTML
+        const setEl = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value || '-';
+        };
+        
+        // Título
+        const titulo = document.getElementById('receb-detalhe-id');
+        if (titulo) {
+            titulo.innerHTML = `<i data-lucide="package" style="width: 28px; height: 28px; margin-right: 10px;"></i>${rec.codigo}${rec.urgente ? ' <span style="color: #e74c3c;">⚡ URGENTE</span>' : ''}`;
+        }
+        
+        // Status tag
+        const statusTag = document.getElementById('receb-detalhe-status-tag');
+        if (statusTag) {
+            const statusClass = rec.status === 'aguardando' ? 'status-pending' : 
+                               rec.status === 'recebido' ? 'status-transit' : 'status-completed';
+            const statusText = rec.status === 'aguardando' ? 'Aguardando' : 
+                              rec.status === 'recebido' ? 'Recebido' : 'Conferido';
+            statusTag.className = `status-badge ${statusClass}`;
+            statusTag.textContent = statusText;
+        }
+        
+        // Reserva tag
+        const reservaTag = document.getElementById('receb-detalhe-reserva-tag');
+        if (reservaTag) {
+            const reservaClass = rec.reserva === 'pendente' ? 'status-pending' : 'status-completed';
+            const reservaText = rec.reserva === 'pendente' ? '🔒 Bloqueado' : '✓ Liberado';
+            reservaTag.className = `status-badge ${reservaClass}`;
+            reservaTag.textContent = reservaText;
+        }
+        
+        // Dados da NF
+        setEl('receb-detalhe-nf', rec.numero_nota_fiscal);
+        setEl('receb-detalhe-emissao', rec.data_emissao ? new Date(rec.data_emissao).toLocaleDateString('pt-BR') : '-');
+        setEl('receb-detalhe-volumes', rec.volumes);
+        setEl('receb-detalhe-usuario', rec.usuario_cadastro_nome || 'Sistema');
+        
+        // Fornecedor e Transporte
+        setEl('receb-detalhe-fornecedor', rec.fornecedor_nome);
+        setEl('receb-detalhe-transportadora', rec.transportadora_nome);
+        
+        // Filiais
+        setEl('receb-detalhe-chegada', rec.filial_chegada_nome);
+        setEl('receb-detalhe-destino', rec.filial_destino_nome || 'Mesma de chegada');
+        
+        // Alerta de transferência
+        const alertaTransf = document.getElementById('receb-detalhe-alerta-transferencia');
+        if (alertaTransf) {
+            alertaTransf.style.display = (rec.filial_chegada_id !== rec.filial_destino_id && rec.filial_destino_id) ? 'flex' : 'none';
+        }
+        
+        // Datas
+        setEl('receb-detalhe-prevista', rec.data_prevista ? new Date(rec.data_prevista).toLocaleDateString('pt-BR') : '-');
+        setEl('receb-detalhe-chegada-data', rec.data_chegada ? new Date(rec.data_chegada).toLocaleString('pt-BR') : '-');
+        setEl('receb-detalhe-conferencia', rec.data_conferencia ? new Date(rec.data_conferencia).toLocaleString('pt-BR') : '-');
+        setEl('receb-detalhe-urgencia', rec.urgente ? 'Sim - Distribuição Imediata' : 'Não');
+        setEl('receb-detalhe-reserva', rec.reserva === 'pendente' ? 'Bloqueado para venda' : 'Liberado para venda');
+        
+        // Responsável
+        const respWrapper = document.getElementById('receb-detalhe-responsavel-wrapper');
+        if (respWrapper) {
+            if (rec.usuario_recebimento_nome) {
+                respWrapper.style.display = 'block';
+                setEl('receb-detalhe-responsavel', rec.usuario_recebimento_nome);
+            } else {
+                respWrapper.style.display = 'none';
+            }
+        }
+        
+        // Divergências
+        const divergenciasCard = document.getElementById('receb-detalhe-divergencias-card');
+        const divergenciasEl = document.getElementById('receb-detalhe-divergencias');
+        if (divergenciasCard && divergenciasEl) {
+            if (rec.divergencias && rec.divergencias.length > 0) {
+                divergenciasCard.style.display = 'block';
+                
+                const faltando = rec.divergencias.filter(d => d.tipo === 'faltando');
+                const sobrando = rec.divergencias.filter(d => d.tipo === 'sobrando');
+                
+                let html = '';
+                
+                // Botões de ação
+                html += `<div style="display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 10px;">
+                    <button class="btn btn-sm btn-primary" onclick="marcarDivergenciaResolvida(${rec.id})">
+                        <i data-lucide="check-circle" style="width: 14px; height: 14px;"></i> Marcar como Resolvida
+                    </button>
+                    <button class="btn btn-sm btn-success" onclick="exportarDivergenciasExcel(${rec.id})">
+                        <i data-lucide="file-spreadsheet" style="width: 14px; height: 14px;"></i> Exportar Excel
+                    </button>
+                </div>`;
+                
+                if (faltando.length > 0) {
+                    html += `<div style="background: #fff3cd; padding: 10px; border-radius: 8px; margin-bottom: 10px;">
+                        <strong style="color: #856404;">⚠️ Itens Faltando:</strong>
+                        <ul style="margin: 10px 0 0 20px; padding: 0;">
+                            ${faltando.map(f => `<li><strong>${f.codigo_referencia}</strong> - Qtd: ${f.quantidade}</li>`).join('')}
+                        </ul>
+                    </div>`;
+                }
+                
+                if (sobrando.length > 0) {
+                    html += `<div style="background: #d1ecf1; padding: 10px; border-radius: 8px;">
+                        <strong style="color: #0c5460;">📦 Itens Sobrando:</strong>
+                        <ul style="margin: 10px 0 0 20px; padding: 0;">
+                            ${sobrando.map(s => `<li><strong>${s.codigo_referencia}</strong> - Qtd: ${s.quantidade}</li>`).join('')}
+                        </ul>
+                    </div>`;
+                }
+                
+                divergenciasEl.innerHTML = html;
+                lucide.createIcons();
+            } else {
+                divergenciasCard.style.display = 'none';
+            }
+        }
+        
+        // Observações gerais (do cadastro)
+        const obsCard = document.getElementById('receb-detalhe-obs-card');
+        const obsEl = document.getElementById('receb-detalhe-observacoes');
+        if (obsCard && obsEl) {
+            if (rec.observacoes || rec.observacao_recebimento) {
+                obsCard.style.display = 'block';
+                let obsTexto = '';
+                if (rec.observacoes) {
+                    obsTexto += `<strong>Obs. Cadastro:</strong> ${rec.observacoes}`;
+                }
+                if (rec.observacao_recebimento) {
+                    if (obsTexto) obsTexto += '<br><br>';
+                    obsTexto += `<strong>Obs. Recebimento:</strong> ${rec.observacao_recebimento}`;
+                }
+                obsEl.innerHTML = obsTexto;
+            } else {
+                obsCard.style.display = 'none';
+            }
+        }
+        
+        showRecebimentoView('detalhe');
+        lucide.createIcons();
+    };
+    
+    window.editarRecebimento = async function(id) {
+        recebimentoEmEdicao = recebimentos.find(r => r.id === id);
+        if (recebimentoEmEdicao) {
+            showRecebimentoView('cadastro');
+        }
+    };
+    
+    // Variável para armazenar o ID do recebimento sendo processado
+    let recebimentoIdAtual = null;
+    
+    window.registrarChegada = async function(id) {
+        abrirModalRecebimento(id);
+    };
+    
+    // Abrir modal de recebimento
+    window.abrirModalRecebimento = function(id) {
+        console.log('🔍 abrirModalRecebimento chamado com id:', id);
+        const rec = recebimentos.find(r => r.id === id);
+        if (!rec) {
+            console.log('❌ Recebimento não encontrado');
+            return;
+        }
+        console.log('✅ Recebimento encontrado:', rec);
+        
+        recebimentoIdAtual = id;
+        
+        // Preencher informações do modal
+        const info = document.getElementById('recebimento-modal-info');
+        if (info) {
+            info.innerHTML = `<strong>NF:</strong> ${rec.numero_nota_fiscal || rec.codigo} | <strong>Fornecedor:</strong> ${rec.fornecedor_nome || 'Não informado'}`;
+        }
+        
+        // Popular select de filiais
+        const selectFilial = document.getElementById('recebimento-filial-real');
+        if (selectFilial) {
+            selectFilial.innerHTML = '<option value="">Selecione a filial...</option>';
+            filiaisRecebimento.forEach(f => {
+                selectFilial.innerHTML += `<option value="${f.id}" ${f.id === rec.filial_chegada_id ? 'selected' : ''}>${f.nome}</option>`;
+            });
+        }
+        
+        // Mostrar filial prevista
+        const filialPrevista = document.getElementById('recebimento-filial-prevista');
+        if (filialPrevista) {
+            filialPrevista.textContent = rec.filial_chegada_nome ? `Filial prevista: ${rec.filial_chegada_nome}` : '';
+        }
+        
+        const volumesEsperados = document.getElementById('recebimento-volumes-esperados');
+        if (volumesEsperados) {
+            volumesEsperados.textContent = rec.volumes ? `Volumes esperados: ${rec.volumes}` : 'Volumes esperados: Não informado';
+        }
+        
+        // Limpar campos
+        document.getElementById('recebimento-volumes-recebidos').value = rec.volumes || '';
+        document.getElementById('recebimento-situacao').value = 'ok';
+        document.getElementById('recebimento-observacao').value = '';
+        
+        // Limpar e ocultar campos de divergência
+        document.getElementById('divergencia-fields').style.display = 'none';
+        document.getElementById('itens-faltando-container').innerHTML = '';
+        document.getElementById('itens-sobrando-container').innerHTML = '';
+        document.getElementById('tabela-faltando-wrapper').style.display = 'none';
+        document.getElementById('tabela-sobrando-wrapper').style.display = 'none';
+        document.getElementById('input-faltando-codigo').value = '';
+        document.getElementById('input-faltando-qtd').value = '1';
+        document.getElementById('input-sobrando-codigo').value = '';
+        document.getElementById('input-sobrando-qtd').value = '1';
+        
+        // Mostrar modal
+        document.getElementById('recebimento-modal').classList.add('show');
+        lucide.createIcons();
+    }
+    
+    // Toggle campos de divergência
+    window.toggleDivergenciaFields = function() {
+        const situacao = document.getElementById('recebimento-situacao').value;
+        const divergenciaFields = document.getElementById('divergencia-fields');
+        if (divergenciaFields) {
+            divergenciaFields.style.display = situacao === 'divergencia' ? 'block' : 'none';
+            if (situacao === 'divergencia') {
+                lucide.createIcons();
+            }
+        }
+    }
+    
+    // Handler para Enter nos campos de divergência
+    window.handleEnterDivergencia = function(event, tipo) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            adicionarItemDivergencia(tipo);
+        }
+    }
+    
+    // Adicionar item de divergência (faltando ou sobrando)
+    window.adicionarItemDivergencia = function(tipo) {
+        const inputCodigo = document.getElementById(`input-${tipo}-codigo`);
+        const inputQtd = document.getElementById(`input-${tipo}-qtd`);
+        const container = document.getElementById(`itens-${tipo}-container`);
+        const wrapper = document.getElementById(`tabela-${tipo}-wrapper`);
+        
+        if (!inputCodigo || !container) return;
+        
+        const codigo = inputCodigo.value.trim();
+        const qtd = parseInt(inputQtd.value) || 1;
+        
+        if (!codigo) {
+            inputCodigo.focus();
+            return;
+        }
+        
+        const itemId = Date.now();
+        const rowHtml = `
+            <tr id="divergencia-${itemId}" style="border-bottom: 1px solid #ddd; background: #fff;">
+                <td style="padding: 8px;" data-codigo="${codigo}">${codigo}</td>
+                <td style="padding: 8px; text-align: center;" data-qtd="${qtd}">${qtd}</td>
+                <td style="padding: 8px; text-align: center;">
+                    <button type="button" class="btn btn-sm btn-danger" onclick="removerItemDivergencia(${itemId}, '${tipo}')" style="padding: 4px 8px;">
+                        <i data-lucide="trash-2" style="width: 14px; height: 14px;"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+        container.insertAdjacentHTML('beforeend', rowHtml);
+        
+        // Mostrar wrapper da tabela
+        if (wrapper) wrapper.style.display = 'block';
+        
+        // Limpar inputs e focar no código
+        inputCodigo.value = '';
+        inputQtd.value = '1';
+        inputCodigo.focus();
+        
+        lucide.createIcons();
+    }
+    
+    // Remover item de divergência
+    window.removerItemDivergencia = function(itemId, tipo) {
+        const item = document.getElementById(`divergencia-${itemId}`);
+        if (item) item.remove();
+        
+        // Ocultar wrapper se vazio
+        const container = document.getElementById(`itens-${tipo}-container`);
+        const wrapper = document.getElementById(`tabela-${tipo}-wrapper`);
+        if (container && wrapper && container.children.length === 0) {
+            wrapper.style.display = 'none';
+        }
+    }
+    
+    // Coletar itens de divergência
+    function coletarItensDivergencia(tipo) {
+        const container = document.getElementById(`itens-${tipo}-container`);
+        if (!container) return [];
+        
+        const itens = [];
+        container.querySelectorAll('tr').forEach(row => {
+            const codigoCell = row.querySelector('td[data-codigo]');
+            const qtdCell = row.querySelector('td[data-qtd]');
+            if (codigoCell && qtdCell) {
+                const codigo = codigoCell.getAttribute('data-codigo');
+                const qtd = parseInt(qtdCell.getAttribute('data-qtd')) || 0;
+                if (codigo && qtd > 0) {
+                    itens.push({ codigo, quantidade: qtd });
+                }
+            }
+        });
+        return itens;
+    }
+    
+    // Marcar divergência como resolvida
+    window.marcarDivergenciaResolvida = async function(recebimentoId) {
+        const confirmado = await showConfirm('Deseja marcar esta divergência como resolvida?', 'Confirmar Resolução');
+        if (!confirmado) return;
+        
+        try {
+            showLoading('Atualizando situação...');
+            const response = await apiFetch(`/api/recebimentos/${recebimentoId}/resolver-divergencia`, {
+                method: 'POST'
+            });
+            
+            if (response.ok) {
+                await showAlert('Divergência marcada como resolvida!', 'Sucesso', 'success');
+                await carregarRecebimentos();
+                showRecebimentoView('lista');
+            } else {
+                const error = await response.json();
+                await showAlert(error.error || 'Erro ao atualizar', 'Erro', 'danger');
+            }
+        } catch (error) {
+            console.error('Erro:', error);
+            await showAlert('Erro ao atualizar situação', 'Erro', 'danger');
+        } finally {
+            hideLoading();
+        }
+    }
+    
+    // Exportar divergências para Excel
+    window.exportarDivergenciasExcel = function(recebimentoId) {
+        const rec = recebimentos.find(r => r.id === recebimentoId);
+        if (!rec || !rec.divergencias || rec.divergencias.length === 0) {
+            showAlert('Nenhuma divergência para exportar', 'Aviso', 'warning');
+            return;
+        }
+        
+        // Preparar dados para Excel
+        const dados = rec.divergencias.map(d => ({
+            'Tipo': d.tipo === 'faltando' ? 'Faltando' : 'Sobrando',
+            'Código Referência': d.codigo_referencia,
+            'Quantidade': d.quantidade
+        }));
+        
+        // Criar workbook
+        const ws = XLSX.utils.json_to_sheet(dados);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Divergências');
+        
+        // Ajustar largura das colunas
+        ws['!cols'] = [
+            { wch: 12 },
+            { wch: 25 },
+            { wch: 12 }
+        ];
+        
+        // Download
+        const nomeArquivo = `Divergencias_${rec.codigo || 'REC-' + rec.id}_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(wb, nomeArquivo);
+    }
+    
+    // Event listeners do modal de recebimento
+    document.getElementById('recebimento-btn-cancelar')?.addEventListener('click', () => {
+        document.getElementById('recebimento-modal').classList.remove('show');
+        recebimentoIdAtual = null;
+    });
+    
+    document.getElementById('recebimento-btn-confirmar')?.addEventListener('click', async () => {
+        if (!recebimentoIdAtual) return;
+        
+        const filialReal = document.getElementById('recebimento-filial-real').value;
+        const volumesRecebidos = document.getElementById('recebimento-volumes-recebidos').value;
+        const situacao = document.getElementById('recebimento-situacao').value;
+        const observacao = document.getElementById('recebimento-observacao').value;
+        
+        // Coletar itens de divergência
+        const itensFaltando = coletarItensDivergencia('faltando');
+        const itensSobrando = coletarItensDivergencia('sobrando');
+        
+        if (!filialReal) {
+            await showAlert('Informe onde a mercadoria chegou', 'Atenção', 'warning');
+            return;
+        }
+        
+        if (!volumesRecebidos || volumesRecebidos < 0) {
+            await showAlert('Informe a quantidade de volumes recebidos', 'Atenção', 'warning');
+            return;
+        }
+        
+        // Se marcou divergência, deve ter pelo menos um item
+        if (situacao === 'divergencia' && itensFaltando.length === 0 && itensSobrando.length === 0) {
+            await showAlert('Adicione pelo menos um item faltando ou sobrando', 'Atenção', 'warning');
+            return;
+        }
+        
+        try {
+            showLoading('Registrando recebimento...');
+            document.getElementById('recebimento-modal').classList.remove('show');
+            
+            const response = await apiFetch(`/api/recebimentos/${recebimentoIdAtual}/receber`, { 
+                method: 'POST',
+                body: JSON.stringify({
+                    filial_recebimento_id: parseInt(filialReal),
+                    volumes_recebidos: parseInt(volumesRecebidos),
+                    situacao: situacao,
+                    observacao_recebimento: observacao,
+                    itens_faltando: itensFaltando,
+                    itens_sobrando: itensSobrando
+                })
+            });
+            
+            if (response.ok) {
+                await showAlert('Recebimento registrado com sucesso!', 'Sucesso', 'success');
+                await carregarRecebimentos();
+                showRecebimentoView('lista');
+            } else {
+                const error = await response.json();
+                await showAlert(error.error || 'Erro ao registrar', 'Erro', 'danger');
+            }
+        } catch (error) {
+            console.error('Erro:', error);
+            await showAlert('Erro ao registrar recebimento', 'Erro', 'danger');
+        } finally {
+            hideLoading();
+            recebimentoIdAtual = null;
+        }
+    });
+    
+    window.registrarConferencia = async function(id) {
+        if (!await showConfirm('Confirma a conferência do recebimento?', 'Conferir Recebimento', 'info')) {
+            return;
+        }
+        
+        try {
+            showLoading('Conferindo...');
+            const response = await apiFetch(`/api/recebimentos/${id}/conferir`, { method: 'POST' });
+            
+            if (response.ok) {
+                await showAlert('Conferência registrada com sucesso!', 'Sucesso', 'success');
+                await carregarRecebimentos();
+                showRecebimentoView('lista');
+            } else {
+                const error = await response.json();
+                await showAlert(error.error || 'Erro ao conferir', 'Erro', 'danger');
+            }
+        } catch (error) {
+            console.error('Erro:', error);
+            await showAlert('Erro ao conferir recebimento', 'Erro', 'danger');
+        } finally {
+            hideLoading();
+        }
+    };
+    
+    window.confirmarChegadaDestino = async function(id) {
+        const rec = recebimentos.find(r => r.id === id);
+        if (!rec) return;
+        
+        const filialDestino = rec.filial_destino_nome || 'destino';
+        
+        if (!await showConfirm(`Confirma que a mercadoria chegou em ${filialDestino}?`, 'Confirmar Chegada no Destino', 'success')) {
+            return;
+        }
+        
+        try {
+            showLoading('Confirmando chegada...');
+            const response = await apiFetch(`/api/recebimentos/${id}/chegada-destino`, { method: 'POST' });
+            
+            if (response.ok) {
+                await showAlert(`Chegada em ${filialDestino} confirmada!`, 'Sucesso', 'success');
+                await carregarRecebimentos();
+                showRecebimentoView('lista');
+            } else {
+                const error = await response.json();
+                await showAlert(error.error || 'Erro ao confirmar', 'Erro', 'danger');
+            }
+        } catch (error) {
+            console.error('Erro:', error);
+            await showAlert('Erro ao confirmar chegada no destino', 'Erro', 'danger');
+        } finally {
+            hideLoading();
+        }
+    };
+    
+    window.liberarRecebimento = async function(id) {
+        if (!await showConfirm('Confirma a liberação da mercadoria para venda?', 'Liberar Mercadoria', 'warning')) {
+            return;
+        }
+        
+        try {
+            showLoading('Liberando...');
+            const response = await apiFetch(`/api/recebimentos/${id}/liberar`, { method: 'POST' });
+            
+            if (response.ok) {
+                await showAlert('Mercadoria liberada para venda!', 'Sucesso', 'success');
+                await carregarRecebimentos();
+                showRecebimentoView('lista');
+            } else {
+                const error = await response.json();
+                await showAlert(error.error || 'Erro ao liberar', 'Erro', 'danger');
+            }
+        } catch (error) {
+            console.error('Erro:', error);
+            await showAlert('Erro ao liberar mercadoria', 'Erro', 'danger');
+        } finally {
+            hideLoading();
+        }
+    };
+
 });
     
 

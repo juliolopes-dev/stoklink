@@ -7,7 +7,7 @@
     <!-- Script para os Ícones Modernos (Lucide) -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Estilos CSS -->
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
 
@@ -20,6 +20,8 @@
             <button id="btn-show-dashboard" class="active"><i data-lucide="layout-dashboard"></i> Dashboard</button>
             <button id="btn-show-cadastro"><i data-lucide="plus-circle"></i> Nova Transferência</button>
             <button id="btn-show-visualizacao"><i data-lucide="list"></i> Visualizar Todas</button>
+            <div class="sidebar-divider"></div>
+            <button id="btn-show-recebimento"><i data-lucide="package-check"></i> Recebimento Fábrica</button>
             <button id="btn-admin" style="display: none;"><i data-lucide="settings"></i> Administração</button>
         </nav>
         <div style="margin-top: auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.2);">
@@ -254,6 +256,368 @@
                 <button class="btn btn-secondary" id="btn-voltar-lista"><i data-lucide="arrow-left"></i> Voltar</button>
             </div>
         </div>
+
+        <!-- ============================================== -->
+        <!-- SEÇÃO: RECEBIMENTO DE FÁBRICA                 -->
+        <!-- ============================================== -->
+
+        <!-- VISTA PRINCIPAL - RECEBIMENTO FÁBRICA -->
+        <div id="recebimento-fabrica-view" style="display: none;">
+            <h2><i data-lucide="package-check" style="width: 28px; height: 28px; margin-right: 10px;"></i>Recebimento de Fábrica</h2>
+            <p class="subtitle">Controle de mercadorias recebidas de fornecedores.</p>
+            
+            <!-- Cards de Resumo -->
+            <div class="dashboard-summary">
+                <div class="card summary-card" style="border-left: 4px solid #f39c12; background: linear-gradient(135deg, #f39c12, #e67e22); opacity: 1;">
+                    <h3>AGUARDANDO</h3>
+                    <div id="receb-summary-aguardando" class="summary-count">0</div>
+                </div>
+                <div class="card summary-card" style="border-left: 4px solid #3498db; background: linear-gradient(135deg, #3498db, #2980b9); opacity: 1;">
+                    <h3>RECEBIDOS</h3>
+                    <div id="receb-summary-recebido" class="summary-count">0</div>
+                </div>
+                <div class="card summary-card" style="border-left: 4px solid #27ae60; background: linear-gradient(135deg, #27ae60, #1e8449); opacity: 1;">
+                    <h3>CONFERIDOS</h3>
+                    <div id="receb-summary-conferido" class="summary-count">0</div>
+                </div>
+                <div class="card summary-card" style="border-left: 4px solid #e74c3c; background: linear-gradient(135deg, #e74c3c, #c0392b); opacity: 1;">
+                    <h3>🔴 BLOQUEADAS</h3>
+                    <div id="receb-summary-bloqueado" class="summary-count">0</div>
+                </div>
+            </div>
+
+            <!-- Alertas de Distribuição Imediata -->
+            <div id="receb-alertas-urgentes" class="card" style="display: none; border-left: 4px solid #e74c3c; background: #fff5f5;">
+                <div class="card-header" style="color: #e74c3c;">
+                    <i data-lucide="alert-triangle"></i>
+                    <span>Distribuição Imediata - Atenção!</span>
+                </div>
+                <div id="receb-lista-urgentes"></div>
+            </div>
+
+            <!-- Ações Rápidas -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header" style="justify-content: space-between; align-items: center;">
+                    <span><i data-lucide="zap"></i>Ações Rápidas</span>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-success" id="btn-cadastrar-nf">
+                            <i data-lucide="file-plus"></i> Cadastrar NF (Compras)
+                        </button>
+                        <button class="btn btn-primary" id="btn-registrar-chegada">
+                            <i data-lucide="package-check"></i> Registrar Chegada
+                        </button>
+                        <button class="btn btn-secondary" id="btn-atualizar-recebimentos">
+                            <i data-lucide="refresh-cw"></i> Atualizar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filtros -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header"><i data-lucide="filter"></i>Filtros</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="receb-filtro-status">Status</label>
+                        <select id="receb-filtro-status">
+                            <option value="">Todos</option>
+                            <option value="aguardando">Aguardando</option>
+                            <option value="recebido">Recebido</option>
+                            <option value="conferido">Conferido</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="receb-filtro-reserva">Reserva (Bloqueio)</label>
+                        <select id="receb-filtro-reserva">
+                            <option value="">Todos</option>
+                            <option value="pendente">🔴 Pendente (Bloqueada)</option>
+                            <option value="ok">🟢 OK (Liberada)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="receb-filtro-urgencia">Urgência</label>
+                        <select id="receb-filtro-urgencia">
+                            <option value="">Todos</option>
+                            <option value="distribuicao_imediata">🔥 Distribuição Imediata</option>
+                            <option value="estocagem">📦 Estocagem</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="receb-filtro-destino">Filial Destino</label>
+                        <select id="receb-filtro-destino">
+                            <option value="">Todas</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="receb-filtro-nf">Número NF</label>
+                        <input type="text" id="receb-filtro-nf" placeholder="Digite o número da NF">
+                    </div>
+                    <div class="form-group">
+                        <label for="receb-filtro-fornecedor">Fornecedor</label>
+                        <select id="receb-filtro-fornecedor">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="filter-footer">
+                    <div></div>
+                    <div class="filter-buttons">
+                        <button type="button" class="btn btn-secondary" id="btn-limpar-filtros-receb">
+                            <i data-lucide="x"></i> Limpar Filtros
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lista de Recebimentos -->
+            <div class="card">
+                <div class="card-header">
+                    <i data-lucide="list"></i>
+                    <span>Recebimentos</span>
+                </div>
+                <div id="recebimentos-lista" class="scrollable-list"></div>
+            </div>
+        </div>
+
+        <!-- VISTA - REGISTRAR CHEGADA -->
+        <div id="registrar-chegada-view" style="display: none;">
+            <h2><i data-lucide="package-check" style="width: 28px; height: 28px; margin-right: 10px;"></i>Registrar Chegada de Mercadoria</h2>
+            <p class="subtitle">Busque uma NF já cadastrada ou registre uma nova chegada.</p>
+            
+            <!-- Buscar NF Existente -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header"><i data-lucide="search"></i>Buscar NF Cadastrada</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="busca-nf-numero">Número da NF</label>
+                        <input type="text" id="busca-nf-numero" placeholder="Digite o número da NF...">
+                    </div>
+                    <div class="form-group" style="display: flex; align-items: flex-end;">
+                        <button type="button" class="btn btn-primary" id="btn-buscar-nf">
+                            <i data-lucide="search"></i> Buscar
+                        </button>
+                    </div>
+                </div>
+                <div id="resultado-busca-nf" style="display: none; margin-top: 15px;"></div>
+            </div>
+            
+            <!-- Lista de NFs Aguardando Chegada -->
+            <div class="card">
+                <div class="card-header"><i data-lucide="clock"></i>NFs Aguardando Chegada</div>
+                <div id="lista-nfs-aguardando" class="scrollable-list" style="max-height: 300px;"></div>
+            </div>
+            
+            <div class="actions-footer" style="margin-top: 20px;">
+                <button class="btn btn-secondary" id="btn-voltar-chegada">
+                    <i data-lucide="arrow-left"></i> Voltar
+                </button>
+                <button class="btn btn-warning" id="btn-nf-nao-cadastrada" style="background: #f39c12;">
+                    <i data-lucide="alert-circle"></i> NF Não Cadastrada? Registrar Agora
+                </button>
+            </div>
+        </div>
+
+        <!-- VISTA - CADASTRAR NF (COMPRAS) -->
+        <div id="recebimento-cadastro-view" style="display: none;">
+            <h2 id="receb-cadastro-titulo"><i data-lucide="file-plus" style="width: 28px; height: 28px; margin-right: 10px;"></i>Cadastrar NF</h2>
+            <p class="subtitle" id="receb-cadastro-subtitulo">Cadastre a NF antes da mercadoria chegar (setor de Compras).</p>
+            
+            <form id="recebimento-form">
+                <!-- Dados da NF -->
+                <div class="card">
+                    <div class="card-header"><i data-lucide="file-text"></i>Dados da Nota Fiscal</div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="receb-numero-nf">Número da NF *</label>
+                            <input type="text" id="receb-numero-nf" required placeholder="Ex: 123456">
+                        </div>
+                        <div class="form-group">
+                            <label for="receb-data-emissao">Data de Emissão *</label>
+                            <input type="date" id="receb-data-emissao" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="receb-qtd-volumes">Quantidade de Volumes</label>
+                            <input type="number" id="receb-qtd-volumes" min="1" placeholder="Ex: 10">
+                            <small style="color: #6c757d;">Obrigatório apenas no recebimento</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fornecedor e Transportadora -->
+                <div class="card">
+                    <div class="card-header"><i data-lucide="truck"></i>Fornecedor e Transporte</div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="receb-fornecedor">Fornecedor *</label>
+                            <input type="text" id="receb-fornecedor" list="lista-fornecedores" placeholder="Digite para buscar..." autocomplete="off" required>
+                            <datalist id="lista-fornecedores"></datalist>
+                        </div>
+                        <div class="form-group">
+                            <label for="receb-transportadora">Transportadora</label>
+                            <input type="text" id="receb-transportadora" list="lista-transportadoras" placeholder="Digite para buscar..." autocomplete="off">
+                            <datalist id="lista-transportadoras"></datalist>
+                            <small style="color: #6c757d;">Obrigatório apenas no recebimento</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filiais -->
+                <div class="card">
+                    <div class="card-header"><i data-lucide="building"></i>Filiais</div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="receb-filial-chegada">Filial de Chegada *</label>
+                            <select id="receb-filial-chegada" required>
+                                <option value="">Onde a mercadoria vai chegar?</option>
+                            </select>
+                            <small style="color: #6c757d;">Local físico onde a mercadoria será recebida</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="receb-filial-destino">Filial de Destino Final *</label>
+                            <select id="receb-filial-destino" required>
+                                <option value="">Para qual filial é essa mercadoria?</option>
+                            </select>
+                            <small style="color: #6c757d;">Destino final da mercadoria (pode ser diferente da chegada)</small>
+                        </div>
+                    </div>
+                    <div id="receb-alerta-destino-diferente" class="alert alert-warning" style="display: none; margin-top: 15px;">
+                        <i data-lucide="alert-circle"></i>
+                        <span>Atenção: A filial de destino é diferente da chegada. Será necessário criar uma transferência posteriormente.</span>
+                    </div>
+                </div>
+
+                <!-- Datas e Controle -->
+                <div class="card">
+                    <div class="card-header"><i data-lucide="calendar"></i>Previsão e Controle</div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="receb-data-prevista">Data Prevista de Chegada</label>
+                            <input type="date" id="receb-data-prevista">
+                            <small style="color: #6c757d;">Opcional - para cálculo de média de dias</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="receb-urgencia">Urgência *</label>
+                            <select id="receb-urgencia" required>
+                                <option value="estocagem">📦 Estocagem (fluxo normal)</option>
+                                <option value="distribuicao_imediata">🔥 Distribuição Imediata (urgente)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="receb-reserva">Reserva (Bloqueio para Venda) *</label>
+                            <select id="receb-reserva" required>
+                                <option value="pendente">🔴 Pendente (Bloqueada para venda)</option>
+                                <option value="ok">🟢 OK (Liberada para venda)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Observações -->
+                <div class="card">
+                    <div class="card-header"><i data-lucide="message-square"></i>Observações</div>
+                    <div class="form-group">
+                        <textarea id="receb-observacoes" rows="3" placeholder="Observações adicionais (opcional)"></textarea>
+                    </div>
+                </div>
+
+                <!-- Botões de Ação -->
+                <div class="actions-footer">
+                    <button type="button" class="btn btn-secondary" id="btn-cancelar-recebimento">
+                        <i data-lucide="x"></i> Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i data-lucide="save"></i> Cadastrar NF
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- VISTA - DETALHES DO RECEBIMENTO -->
+        <div id="recebimento-detalhe-view" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+                <div>
+                    <h2 id="receb-detalhe-id"><i data-lucide="package" style="width: 28px; height: 28px; margin-right: 10px;"></i>RECEB-2025-001</h2>
+                    <p class="subtitle">Detalhes do recebimento de fábrica</p>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <span id="receb-detalhe-reserva-tag" class="status-tag"></span>
+                    <span id="receb-detalhe-status-tag" class="status-tag"></span>
+                </div>
+            </div>
+
+            <!-- Informações da NF -->
+            <div class="card">
+                <div class="card-header"><i data-lucide="file-text"></i>Dados da Nota Fiscal</div>
+                <div class="info-grid">
+                    <div class="info-item"><strong>Número NF:</strong> <span id="receb-detalhe-nf"></span></div>
+                    <div class="info-item"><strong>Data Emissão:</strong> <span id="receb-detalhe-emissao"></span></div>
+                    <div class="info-item"><strong>Volumes:</strong> <span id="receb-detalhe-volumes"></span></div>
+                    <div class="info-item"><strong>Lançado por:</strong> <span id="receb-detalhe-usuario"></span></div>
+                </div>
+            </div>
+
+            <!-- Fornecedor e Transporte -->
+            <div class="card">
+                <div class="card-header"><i data-lucide="truck"></i>Fornecedor e Transporte</div>
+                <div class="info-grid">
+                    <div class="info-item"><strong>Fornecedor:</strong> <span id="receb-detalhe-fornecedor"></span></div>
+                    <div class="info-item"><strong>Transportadora:</strong> <span id="receb-detalhe-transportadora"></span></div>
+                </div>
+            </div>
+
+            <!-- Filiais -->
+            <div class="card">
+                <div class="card-header"><i data-lucide="building"></i>Filiais</div>
+                <div class="info-grid">
+                    <div class="info-item"><strong>Filial de Chegada:</strong> <span id="receb-detalhe-chegada"></span></div>
+                    <div class="info-item"><strong>Filial de Destino:</strong> <span id="receb-detalhe-destino"></span></div>
+                </div>
+                <div id="receb-detalhe-alerta-transferencia" class="alert alert-info" style="display: none; margin-top: 15px;">
+                    <i data-lucide="info"></i>
+                    <span>Esta mercadoria precisa ser transferida para a filial de destino.</span>
+                </div>
+            </div>
+
+            <!-- Datas e Controle -->
+            <div class="card">
+                <div class="card-header"><i data-lucide="calendar"></i>Datas e Controle</div>
+                <div class="info-grid">
+                    <div class="info-item"><strong>Data Prevista:</strong> <span id="receb-detalhe-prevista"></span></div>
+                    <div class="info-item"><strong>Data Chegada:</strong> <span id="receb-detalhe-chegada-data"></span></div>
+                    <div class="info-item"><strong>Data Conferência:</strong> <span id="receb-detalhe-conferencia"></span></div>
+                    <div class="info-item"><strong>Urgência:</strong> <span id="receb-detalhe-urgencia"></span></div>
+                    <div class="info-item"><strong>Reserva:</strong> <span id="receb-detalhe-reserva"></span></div>
+                    <div class="info-item" id="receb-detalhe-responsavel-wrapper" style="display: none;">
+                        <strong>Recebido por:</strong> <span id="receb-detalhe-responsavel"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Divergências -->
+            <div class="card" id="receb-detalhe-divergencias-card" style="display: none;">
+                <div class="card-header"><i data-lucide="alert-triangle"></i>Divergências no Recebimento</div>
+                <div id="receb-detalhe-divergencias" style="padding: 10px 0;"></div>
+            </div>
+
+            <!-- Observações -->
+            <div class="card" id="receb-detalhe-obs-card" style="display: none;">
+                <div class="card-header"><i data-lucide="message-square"></i>Observações</div>
+                <p id="receb-detalhe-observacoes" style="padding: 10px 0; color: #555;"></p>
+            </div>
+
+            <!-- Ações -->
+            <div class="card">
+                <div class="card-header"><i data-lucide="check-square"></i>Ações Disponíveis</div>
+                <div id="receb-detalhe-acoes" style="padding: 15px 0;"></div>
+            </div>
+
+            <div class="actions-footer">
+                <button class="btn btn-secondary" id="btn-voltar-recebimentos">
+                    <i data-lucide="arrow-left"></i> Voltar
+                </button>
+            </div>
+        </div>
+
     </main>
 
     <!-- Modal Personalizado -->
@@ -273,26 +637,127 @@
         </div>
     </div>
 
-    <!-- Modal de Recebimento -->
-    <div id="recebimento-modal" class="modal-overlay">
-        <div class="modal-container">
+    <!-- Modal de Recebimento de Transferência -->
+    <div id="transf-recebimento-modal" class="modal-overlay">
+        <div class="modal-container" style="max-width: 450px;">
             <div class="modal-header">
-                <div class="modal-icon info">ℹ</div>
-                <h3>Registrar Recebimento</h3>
+                <div class="modal-icon success">✅</div>
+                <h3>Confirmar Recebimento</h3>
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label for="recebimento-observacao">Observação (opcional)</label>
-                    <textarea id="recebimento-observacao" rows="4" placeholder="Descreva divergências ou ocorrências no recebimento"></textarea>
+                    <label for="transf-recebimento-observacao">Observações do Recebimento</label>
+                    <textarea id="transf-recebimento-observacao" rows="3" placeholder="Adicione observações sobre o recebimento (opcional)..."></textarea>
                 </div>
-                <label class="checkbox-inline">
-                    <input type="checkbox" id="recebimento-divergencia">
-                    Adicionar tag <strong>Divergência</strong>
-                </label>
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="transf-recebimento-divergencia" style="width: 18px; height: 18px;">
+                        Adicionar tag de divergência
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="transf-recebimento-btn-cancelar">Cancelar</button>
+                <button class="btn btn-success" id="transf-recebimento-btn-confirmar">Confirmar Recebimento</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Recebimento de Fábrica -->
+    <div id="recebimento-modal" class="modal-overlay">
+        <div class="modal-container" style="max-width: 500px;">
+            <div class="modal-header">
+                <div class="modal-icon info">📦</div>
+                <h3 id="recebimento-modal-titulo">Registrar Recebimento</h3>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <p id="recebimento-modal-info" style="margin-bottom: 15px; color: #666;"></p>
+                
+                <div class="form-group">
+                    <label for="recebimento-filial-real">Onde a mercadoria chegou? *</label>
+                    <select id="recebimento-filial-real" required>
+                        <option value="">Selecione a filial...</option>
+                    </select>
+                    <small id="recebimento-filial-prevista" style="color: #6c757d;"></small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="recebimento-volumes-recebidos">Quantidade de Volumes Recebidos *</label>
+                    <input type="number" id="recebimento-volumes-recebidos" min="0" required placeholder="Informe a quantidade de volumes">
+                    <small id="recebimento-volumes-esperados" style="color: #6c757d;"></small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="recebimento-situacao">Situação da Mercadoria</label>
+                    <select id="recebimento-situacao" onchange="toggleDivergenciaFields()">
+                        <option value="ok">✅ OK - Conforme</option>
+                        <option value="divergencia">⚠️ Divergência</option>
+                    </select>
+                </div>
+                
+                <!-- Campos de Divergência (aparecem quando situação = divergência) -->
+                <div id="divergencia-fields" style="display: none;">
+                    <!-- Itens Faltando -->
+                    <div class="form-group" style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                        <label style="color: #856404; font-weight: 600; margin-bottom: 10px; display: block;">
+                            ⚠️ Itens Faltando
+                        </label>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <input type="text" id="input-faltando-codigo" placeholder="Cód. Ref" style="flex: 2; padding: 8px; border: 1px solid #f0ad4e; border-radius: 4px;" onkeypress="handleEnterDivergencia(event, 'faltando')">
+                            <input type="number" id="input-faltando-qtd" placeholder="Qtd" value="1" min="1" style="flex: 1; padding: 8px; border: 1px solid #f0ad4e; border-radius: 4px; max-width: 80px;" onkeypress="handleEnterDivergencia(event, 'faltando')">
+                            <button type="button" class="btn btn-sm btn-warning" onclick="adicionarItemDivergencia('faltando')" style="padding: 8px 12px;">
+                                <i data-lucide="plus" style="width: 16px; height: 16px;"></i>
+                            </button>
+                        </div>
+                        <div id="tabela-faltando-wrapper" style="display: none; max-height: 200px; overflow-y: auto; border-radius: 4px; border: 1px solid #f0ad4e;">
+                            <table id="tabela-faltando" style="width: 100%; border-collapse: collapse;">
+                                <thead style="position: sticky; top: 0; z-index: 1;">
+                                    <tr style="background: #f0ad4e; color: #fff;">
+                                        <th style="padding: 8px; text-align: left;">Cód. Ref</th>
+                                        <th style="padding: 8px; text-align: center; width: 80px;">Qtd</th>
+                                        <th style="padding: 8px; text-align: center; width: 50px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="itens-faltando-container"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Itens Sobrando -->
+                    <div class="form-group" style="background: #d1ecf1; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                        <label style="color: #0c5460; font-weight: 600; margin-bottom: 10px; display: block;">
+                            📦 Itens Sobrando
+                        </label>
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <input type="text" id="input-sobrando-codigo" placeholder="Cód. Ref" style="flex: 2; padding: 8px; border: 1px solid #17a2b8; border-radius: 4px;" onkeypress="handleEnterDivergencia(event, 'sobrando')">
+                            <input type="number" id="input-sobrando-qtd" placeholder="Qtd" value="1" min="1" style="flex: 1; padding: 8px; border: 1px solid #17a2b8; border-radius: 4px; max-width: 80px;" onkeypress="handleEnterDivergencia(event, 'sobrando')">
+                            <button type="button" class="btn btn-sm btn-info" onclick="adicionarItemDivergencia('sobrando')" style="padding: 8px 12px;">
+                                <i data-lucide="plus" style="width: 16px; height: 16px;"></i>
+                            </button>
+                        </div>
+                        <div id="tabela-sobrando-wrapper" style="display: none; max-height: 200px; overflow-y: auto; border-radius: 4px; border: 1px solid #17a2b8;">
+                            <table id="tabela-sobrando" style="width: 100%; border-collapse: collapse;">
+                                <thead style="position: sticky; top: 0; z-index: 1;">
+                                    <tr style="background: #17a2b8; color: #fff;">
+                                        <th style="padding: 8px; text-align: left;">Cód. Ref</th>
+                                        <th style="padding: 8px; text-align: center; width: 80px;">Qtd</th>
+                                        <th style="padding: 8px; text-align: center; width: 50px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="itens-sobrando-container"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="recebimento-observacao">Observações</label>
+                    <textarea id="recebimento-observacao" rows="3" placeholder="Observações adicionais (opcional)..."></textarea>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="recebimento-btn-cancelar">Cancelar</button>
-                <button class="btn btn-primary" id="recebimento-btn-confirmar"><i data-lucide="check-circle"></i> Confirmar Recebimento</button>
+                <button class="btn btn-success" id="recebimento-btn-confirmar"><i data-lucide="package-check"></i> Confirmar Recebimento</button>
             </div>
         </div>
     </div>
@@ -310,7 +775,7 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     
     <!-- Script JavaScript -->
-    <script src="app.js"></script>
+    <script src="app.js?v=46"></script>
 </body>
 </html>
 

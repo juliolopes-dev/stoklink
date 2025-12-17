@@ -355,19 +355,23 @@ p.subtitle {
     border: none;
     border-radius: 6px;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.2s ease;
     font-weight: 500;
 }
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
 .btn-primary { background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: white; }
-.btn-primary:hover { background: linear-gradient(135deg, #163058 0%, #1f4178 100%); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(30, 60, 114, 0.3); }
+.btn-primary:hover { background: linear-gradient(135deg, #163058 0%, #1f4178 100%); }
 .btn-secondary { background-color: #6c757d; color: white; }
 .btn-secondary:hover { background-color: #5c636a; }
 .btn-info { background-color: #2a5298; color: white; }
-.btn-info:hover { background-color: #1e3c72; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(30, 60, 114, 0.3); }
+.btn-info:hover { background-color: #1e3c72; }
 .btn-danger { background-color: #dc3545; color: white; }
 .btn-danger:hover { background-color: #bb2d3b; }
-.btn-success { background-color: #198754; color: white; }
-.btn-success:hover { background-color: #157347; }
+.btn-success { background: linear-gradient(135deg, #198754 0%, #27ae60 100%); color: white; }
+.btn-success:hover { background: linear-gradient(135deg, #157347 0%, #1e8449 100%); }
 
 .actions-footer {
     display: flex;
@@ -846,4 +850,251 @@ i[data-lucide] {
     color: #6c757d;
     font-size: 14px;
     margin: 0;
+}
+
+/* ========================================
+   SEÇÃO: RECEBIMENTO DE FÁBRICA
+   ======================================== */
+
+/* Divisor do menu lateral */
+.sidebar-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.2);
+    margin: 15px 0;
+}
+
+/* Alertas */
+.alert {
+    padding: 12px 16px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+}
+
+.alert i {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+}
+
+.alert-warning {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeeba;
+}
+
+.alert-info {
+    background: #d1ecf1;
+    color: #0c5460;
+    border: 1px solid #bee5eb;
+}
+
+.alert-danger {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.alert-success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+/* Cards de item na lista de recebimentos */
+.recebimento-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid #e9ecef;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.recebimento-item:hover {
+    background-color: #f8f9fa;
+}
+
+.recebimento-item:last-child {
+    border-bottom: none;
+}
+
+.recebimento-item-info {
+    flex: 1;
+}
+
+.recebimento-item-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.recebimento-item-id {
+    font-weight: 600;
+    color: #1e3c72;
+    font-size: 15px;
+}
+
+.recebimento-item-nf {
+    color: #6c757d;
+    font-size: 14px;
+}
+
+.recebimento-item-details {
+    display: flex;
+    gap: 20px;
+    font-size: 13px;
+    color: #6c757d;
+}
+
+.recebimento-item-details span {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.recebimento-item-tags {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* Tags de status específicas para recebimento */
+.status-tag.aguardando {
+    background: linear-gradient(135deg, #f39c12, #e67e22);
+    color: white;
+}
+
+.status-tag.recebido {
+    background: linear-gradient(135deg, #3498db, #2980b9);
+    color: white;
+}
+
+.status-tag.conferido {
+    background: linear-gradient(135deg, #27ae60, #229954);
+    color: white;
+}
+
+.status-tag.bloqueada {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: white;
+}
+
+.status-tag.liberada {
+    background: linear-gradient(135deg, #27ae60, #229954);
+    color: white;
+}
+
+.status-tag.urgente {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: white;
+    animation: pulse-urgente 2s infinite;
+}
+
+@keyframes pulse-urgente {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* Item urgente na lista */
+.recebimento-item.urgente {
+    background: linear-gradient(90deg, #fff5f5 0%, #ffffff 100%);
+    border-left: 4px solid #e74c3c;
+}
+
+/* Ações no detalhe do recebimento */
+.receb-acoes-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.receb-acoes-grid .btn {
+    flex: 1;
+    min-width: 200px;
+    justify-content: center;
+}
+
+/* Lista vazia */
+.lista-vazia {
+    text-align: center;
+    padding: 40px 20px;
+    color: #6c757d;
+}
+
+.lista-vazia i {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 15px;
+    opacity: 0.5;
+}
+
+.lista-vazia p {
+    font-size: 16px;
+}
+
+/* ========================================
+   TABELA ADMIN
+======================================== */
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.admin-table th,
+.admin-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.admin-table th {
+    background: #f8f9fa;
+    font-weight: 600;
+    color: #333;
+}
+
+.admin-table tr:hover {
+    background: #f8f9fa;
+}
+
+.admin-table td:last-child {
+    white-space: nowrap;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.status-badge.ativo {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-badge.inativo {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.btn-sm {
+    padding: 6px 10px;
+    font-size: 12px;
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c82333;
 }
