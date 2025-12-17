@@ -4,6 +4,15 @@
 
 console.log('✅ app.js carregado!');
 
+// Otimização: debounce para lucide.createIcons (evita chamadas excessivas)
+let lucideTimeout = null;
+const lucideCreateIconsDebounced = () => {
+    if (lucideTimeout) clearTimeout(lucideTimeout);
+    lucideTimeout = setTimeout(() => {
+        if (window.lucide) lucide.createIcons();
+    }, 50);
+};
+
 // Detectar ambiente automaticamente
 const isLocal = window.location.hostname === 'localhost' || 
                 window.location.hostname === '127.0.0.1' || 
@@ -416,7 +425,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             exportButton.style.display = viewName === 'detalhe' && transferenciaEmDetalhe ? 'flex' : 'none';
         }
 
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     }
 
     // --- Funções de Renderização de Tags ---
@@ -464,7 +473,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             tagEl.appendChild(removeEl);
             selectedTagsContainer.appendChild(tagEl);
         });
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     }
 
     function atualizarEstadoFormularioEdicao() {
@@ -480,7 +489,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 btnSalvarRascunho.style.display = salvarRascunhoDisplayPadrao;
             }
         }
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     }
 
     function limparModoEdicaoTransferencia() {
@@ -516,7 +525,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         itensContainer.innerHTML = '';
         t.itens.forEach(item => adicionarItem(item.codigo, item.solicitada));
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
         bloquearDeteccaoAlteracoes = false;
         resetFormularioAlterado();
     }
@@ -641,7 +650,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
         
         container.appendChild(table);
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     }
     function updateDashboard() {
         const rascunhos = transferencias.filter(t => t.status === 'rascunho').length;
@@ -894,7 +903,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
             adminActions.appendChild(btnExcluir);
             acoesContainer.appendChild(adminActions);
-            lucide.createIcons();
+            lucideCreateIconsDebounced();
         }
         
         // Mostrar timestamps se existirem
@@ -1219,7 +1228,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         configurarAcoesItem(itemRow);
         itensContainer.appendChild(itemRow);
         if (window.lucide) {
-            lucide.createIcons();
+            lucideCreateIconsDebounced();
         }
         marcarFormularioAlterado();
     }
@@ -1250,7 +1259,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             });
         }
 
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     }
 
     function editarItem(itemRow) {
@@ -1333,7 +1342,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 configurarAcoesItem(itemRow);
             });
 
-            lucide.createIcons();
+            lucideCreateIconsDebounced();
         }
     }
 
@@ -1376,6 +1385,18 @@ document.addEventListener('DOMContentLoaded', async function() {
             await showAlert('Informe uma quantidade válida.', 'Campo obrigatório', 'warning');
             novoItemQuantidade.focus();
             return;
+        }
+
+        // Verificar se o item já existe na lista atual
+        const itensExistentes = document.querySelectorAll('#itens-container .item-codigo');
+        const codigoUpperCase = codigo.toUpperCase();
+        for (const input of itensExistentes) {
+            if (input.value.toUpperCase() === codigoUpperCase) {
+                await showAlert(`O item "${codigo}" já foi adicionado nesta transferência.`, 'Item Duplicado', 'warning');
+                novoItemCodigo.focus();
+                novoItemCodigo.select();
+                return;
+            }
         }
 
         const permitido = await verificarProdutoDuplicadoAoAdicionar(codigo, destino);
@@ -1859,7 +1880,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     function preencherFormularioComItens(itens) {
         itensContainer.innerHTML = '';
         itens.forEach(({ codigo, solicitada }) => adicionarItem(codigo, solicitada));
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     }
 
     async function criarTransferenciasEmLote(lotes, base) {
@@ -2352,7 +2373,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
         
         transferListContainer.appendChild(table);
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     }
     
     // Limpar filtros
@@ -2474,7 +2495,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Botão Cadastrar NF (Compras)
         const btnCadastrarNF = document.getElementById('btn-cadastrar-nf');
         if (btnCadastrarNF) {
-            btnCadastrarNF.addEventListener('click', () => {
+            btnCadastrarNF.addEventListener('click', async () => {
+                showLoading('Carregando fornecedores e transportadoras...');
+                
+                // Carregar fornecedores/transportadoras se ainda não carregou
+                if (fornecedores.length === 0 || transportadoras.length === 0) {
+                    await carregarFornecedoresETransportadoras();
+                }
+                
                 recebimentoEmEdicao = null;
                 modoRegistroChegada = false;
                 limparFormularioRecebimento();
@@ -2484,6 +2512,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 if (titulo) titulo.innerHTML = '<i data-lucide="file-plus" style="width: 28px; height: 28px; margin-right: 10px;"></i>Cadastrar NF';
                 if (subtitulo) subtitulo.textContent = 'Cadastre a NF antes da mercadoria chegar (setor de Compras).';
                 showRecebimentoView('cadastro');
+                hideLoading();
             });
         }
         
@@ -2651,7 +2680,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Marcar botão como ativo
         if (btnShowRecebimento) btnShowRecebimento.classList.add('active');
         
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     }
     
     // Carregar fornecedores e transportadoras
@@ -2790,7 +2819,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         
         container.style.display = 'block';
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     }
     
     // Renderizar lista de NFs aguardando chegada
@@ -2807,7 +2836,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                     <p style="margin-top: 15px;">Nenhuma NF aguardando chegada</p>
                 </div>
             `;
-            lucide.createIcons();
+            lucideCreateIconsDebounced();
             return;
         }
         
@@ -2835,7 +2864,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
         
         container.innerHTML = html;
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     }
     
     // Registrar chegada de uma NF específica - abre o modal
@@ -2927,7 +2956,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                     </button>
                 </div>
             `;
-            lucide.createIcons();
+            lucideCreateIconsDebounced();
             return;
         }
         
@@ -3055,7 +3084,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         `;
         
         container.innerHTML = html;
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     }
     
     // Limpar formulário
@@ -3066,7 +3095,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const titulo = document.getElementById('receb-cadastro-titulo');
         if (titulo) titulo.innerHTML = '<i data-lucide="plus-circle" style="width: 28px; height: 28px; margin-right: 10px;"></i>Novo Recebimento';
         
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     }
     
     // Preencher formulário para edição
@@ -3102,7 +3131,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         });
         
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     }
     
     // Salvar recebimento
@@ -3125,6 +3154,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         };
         
         // Validação
+        if (!dados.fornecedor_id) {
+            await showAlert('Selecione o fornecedor', 'Atenção', 'warning');
+            return;
+        }
+        
         if (!dados.filial_chegada_id) {
             await showAlert('Selecione a filial de chegada', 'Erro', 'danger');
             return;
@@ -3283,7 +3317,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 }
                 
                 divergenciasEl.innerHTML = html;
-                lucide.createIcons();
+                lucideCreateIconsDebounced();
             } else {
                 divergenciasCard.style.display = 'none';
             }
@@ -3310,7 +3344,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         
         showRecebimentoView('detalhe');
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     };
     
     window.editarRecebimento = async function(id) {
@@ -3383,7 +3417,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         // Mostrar modal
         document.getElementById('recebimento-modal').classList.add('show');
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     }
     
     // Toggle campos de divergência
@@ -3393,7 +3427,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (divergenciaFields) {
             divergenciaFields.style.display = situacao === 'divergencia' ? 'block' : 'none';
             if (situacao === 'divergencia') {
-                lucide.createIcons();
+                lucideCreateIconsDebounced();
             }
         }
     }
@@ -3445,7 +3479,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         inputQtd.value = '1';
         inputCodigo.focus();
         
-        lucide.createIcons();
+        lucideCreateIconsDebounced();
     }
     
     // Remover item de divergência
