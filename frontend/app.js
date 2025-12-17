@@ -2,7 +2,7 @@
 // CONFIGURAÇÃO DA API
 // ====================================
 
-console.log('✅ app.js carregado!');
+// App carregado
 
 // Otimização: debounce para lucide.createIcons (evita chamadas excessivas)
 let lucideTimeout = null;
@@ -22,9 +22,7 @@ const isLocal = window.location.hostname === 'localhost' ||
 // Usar o mesmo hostname que o usuário está acessando para evitar problemas de CORS
 const API_URL = isLocal ? `http://${window.location.hostname}:3001` : window.location.origin;
 
-console.log('🔧 Ambiente:', isLocal ? 'Desenvolvimento Local' : 'Produção');
-console.log('🌐 API URL:', API_URL);
-console.log('📍 Hostname:', window.location.hostname);
+// Ambiente configurado
 
 // Função auxiliar para fazer requisições autenticadas
 async function apiFetch(endpoint, options = {}) {
@@ -40,7 +38,7 @@ async function apiFetch(endpoint, options = {}) {
     }
     
     try {
-        console.log(`🔄 Fetch: ${endpoint}`);
+        // Fetch request
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 120000); // 120s timeout (2 min)
         
@@ -51,7 +49,7 @@ async function apiFetch(endpoint, options = {}) {
         });
         
         clearTimeout(timeoutId);
-        console.log(`✅ Fetch OK: ${endpoint} - Status: ${response.status}`);
+        // Fetch OK
         
         // Se token expirou ou inválido, fazer logout
         if (response.status === 401) {
@@ -267,7 +265,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     // Exibir nome do usuário logado
-    console.log('Usuário logado:', usuario.nome);
+    // Usuário logado
     document.getElementById('user-name').textContent = usuario.nome || 'Usuário';
     
     // Mostrar botão de admin se for admin
@@ -1998,15 +1996,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     // --- Carregar dados iniciais ---
     async function carregarDadosIniciais() {
         try {
-            console.log('🚀 Iniciando carregamento de dados...');
             showLoading('Carregando dados...');
-            console.log('📍 Carregando filiais...');
             await carregarFiliais();
-            console.log('📍 Carregando tags...');
             await carregarTags();
-            console.log('📍 Carregando transferências...');
             await carregarTransferencias();
-            console.log('✅ Dados carregados com sucesso!');
             hideLoading();
         } catch (error) {
             console.error('❌ Erro ao carregar dados iniciais:', error);
@@ -2037,18 +2030,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     // --- Carregar Transferências da API ---
     async function carregarTransferencias(mostrarLoading = false) {
         try {
-            console.log('📍 [1] Iniciando carregarTransferencias...');
             if (mostrarLoading) {
                 showLoading('Atualizando transferências...');
             }
-            console.log('📍 [2] Fazendo fetch...');
             const response = await apiFetch('/api/transferencias');
-            console.log('📍 [3] Response recebido:', response.status);
             
             if (response.ok) {
-                console.log('📍 [4] Parseando JSON...');
                 transferencias = await response.json();
-                console.log('📦 Transferências carregadas:', transferencias.length);
                 transferenciasCarregadas = true;
                 ultimaAtualizacaoTransferencias = Date.now();
                 
@@ -2068,14 +2056,11 @@ document.addEventListener('DOMContentLoaded', async function() {
                 });
                 
                 nextId = maiorSequencial + 1;
-                console.log('📍 [5] Atualizando dashboard...');
                 updateDashboard();
-                console.log('📍 [6] Dashboard atualizado!');
 
                 if (views.visualizacao && views.visualizacao.style.display !== 'none') {
                     aplicarFiltros();
                 }
-                console.log('📍 [7] Concluído!');
             } else {
                 const errorData = await response.json();
                 console.error('Erro ao carregar transferências:', errorData);
@@ -2114,9 +2099,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     function getTagColor(tagNome) {
         // Busca case-insensitive
         const tag = globalTagsData.find(t => t.nome.toLowerCase() === tagNome.toLowerCase());
-        const cor = tag ? (tag.cor || '#1e3c72') : '#1e3c72';
-        console.log('getTagColor:', tagNome, '→', cor, 'globalTagsData:', globalTagsData);
-        return cor;
+        return tag ? (tag.cor || '#1e3c72') : '#1e3c72';
     }
     
     // --- Carregar Filiais da API ---
@@ -2482,7 +2465,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Verificar se o módulo está disponível
     if (btnShowRecebimento && viewRecebimentoFabrica) {
-        console.log('📦 Módulo Recebimento de Fábrica disponível');
+        // Módulo Recebimento de Fábrica disponível
         
         // Botão do menu lateral
         btnShowRecebimento.addEventListener('click', async () => {
@@ -2698,7 +2681,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 transportadoras = await resTransportadoras.json();
             }
             
-            console.log(`📦 Fornecedores: ${fornecedores.length}, Transportadoras: ${transportadoras.length}`);
+            // Fornecedores e transportadoras carregados
         } catch (error) {
             console.error('Erro ao carregar fornecedores/transportadoras:', error);
         }
@@ -2882,14 +2865,14 @@ document.addEventListener('DOMContentLoaded', async function() {
                 const respFiliais = await apiFetch('/api/filiais');
                 if (respFiliais.ok) {
                     filiaisRecebimento = await respFiliais.json();
-                    console.log(`🏢 Filiais carregadas: ${filiaisRecebimento.length}`);
+                    // Filiais carregadas
                 }
             }
             
             const response = await apiFetch('/api/recebimentos');
             if (response.ok) {
                 recebimentos = await response.json();
-                console.log(`📦 Recebimentos carregados: ${recebimentos.length}`);
+                // Recebimentos carregados
                 atualizarDashboardRecebimento();
             }
         } catch (error) {
@@ -3363,13 +3346,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Abrir modal de recebimento
     window.abrirModalRecebimento = function(id) {
-        console.log('🔍 abrirModalRecebimento chamado com id:', id);
         const rec = recebimentos.find(r => r.id === id);
         if (!rec) {
-            console.log('❌ Recebimento não encontrado');
             return;
         }
-        console.log('✅ Recebimento encontrado:', rec);
         
         recebimentoIdAtual = id;
         
