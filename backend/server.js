@@ -5,10 +5,18 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const db = require('./db');
 const { verificarToken, verificarRole } = require('./auth');
+const multer = require('multer');
+const xml2js = require('xml2js');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Configurar multer para upload de arquivos em memória
+const upload = multer({ 
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 } // 5MB
+});
 
 // Middlewares
 app.use(cors({
@@ -1686,6 +1694,139 @@ app.get('/api/recebimentos/:id', verificarToken, async (req, res) => {
     }
 });
 
+// POST - Parser de XML de NF-e
+app.post('/api/recebimentos/parse-xml', verificarToken, upload.single('xmlFile'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'Nenhum arquivo XML enviado' });
+        }
+
+        const xmlContent = req.file.buffer.toString('utf-8');
+        const parser = new xml2js.Parser({ explicitArray: false, mergeAttrs: true });
+        
+        parser.parseString(xmlContent, async (err, result) => {
+            if (err) {
+                console.error('Erro ao parsear XML:', err);
+                return res.status(400).json({ error: 'Arquivo XML inválido' });
+            }
+
+            try {
+                // Navegar na estrutura do XML da NF-e
+                const nfe = result.nfeProc?.NFe?.infNFe || result.NFe?.infNFe;
+                
+                if (!nfe) {
+                    return res.status(400).json({ error: 'XML não é uma NF-e válida' });
+                }
+
+                const ide = nfe.ide;
+                const emit = nfe.emit;
+                const dest = nfe.dest;
+                const transp = nfe.transp;
+                const total = nfe.total?.ICMSTot;
+
+                // Extrair dados da NF-e
+                const dadosNFe = {
+                    numero_nota_fiscal: ide?.nNF || '',
+                    data_emissao: ide?.dhEmi ? ide.dhEmi.split('T')[0] : '',
+                    
+                    // Fornecedor (Emitente)
+                    fornecedor: {
+                        nome: emit?.xNome || '',
+                        cnpj: emit?.CNPJ || '',
+                        telefone: emit?.enderEmit?.fone || '',
+                        endereco: emit?.enderEmit ? 
+                            `${emit.enderEmit.xLgr || ''}, ${emit.enderEmit.nro || ''} - ${emit.enderEmit.xBairro || ''}, ${emit.enderEmit.xMun || ''} - ${emit.enderEmit.UF || ''}` : ''
+                    },
+                    
+                    // Transportadora
+                    transportadora: {
+                        nome: transp?.transporta?.xNome || '',
+                        cnpj: transp?.transporta?.CNPJ || ''
+                    },
+                    
+                    // Volumes
+                    volumes: transp?.vol?.qVol ? parseInt(transp.vol.qVol) : 1,
+                    peso_total: transp?.vol?.pesoB || transp?.vol?.pesoL || null,
+                    
+                    // Destinatário (para referência)
+                    destinatario: {
+                        nome: dest?.xNome || '',
+                        cnpj: dest?.CNPJ || dest?.CPF || '',
+                        cidade: dest?.enderDest?.xMun || '',
+                        uf: dest?.enderDest?.UF || ''
+                    },
+                    
+                    // Valor total
+                    valor_total: total?.vNF || null
+                };
+
+                // Buscar ou criar fornecedor automaticamente
+                let fornecedorId = null;
+                if (dadosNFe.fornecedor.nome) {
+                    const [fornecedorExistente] = await db.query(
+                        'SELECT id FROM fornecedores WHERE empresa_id = ? AND (nome = ? OR cnpj = ?)',
+                        [req.usuario.empresa_id, dadosNFe.fornecedor.nome, dadosNFe.fornecedor.cnpj]
+                    );
+
+                    if (fornecedorExistente.length > 0) {
+                        fornecedorId = fornecedorExistente[0].id;
+                    } else {
+                        // Criar fornecedor automaticamente
+                        const [novoFornecedor] = await db.query(
+                            'INSERT INTO fornecedores (empresa_id, nome, cnpj, telefone, endereco) VALUES (?, ?, ?, ?, ?)',
+                            [
+                                req.usuario.empresa_id,
+                                dadosNFe.fornecedor.nome,
+                                dadosNFe.fornecedor.cnpj,
+                                dadosNFe.fornecedor.telefone,
+                                dadosNFe.fornecedor.endereco
+                            ]
+                        );
+                        fornecedorId = novoFornecedor.insertId;
+                    }
+                }
+
+                // Buscar ou criar transportadora automaticamente
+                let transportadoraId = null;
+                if (dadosNFe.transportadora.nome) {
+                    const [transpExistente] = await db.query(
+                        'SELECT id FROM transportadoras WHERE empresa_id = ? AND (nome = ? OR cnpj = ?)',
+                        [req.usuario.empresa_id, dadosNFe.transportadora.nome, dadosNFe.transportadora.cnpj]
+                    );
+
+                    if (transpExistente.length > 0) {
+                        transportadoraId = transpExistente[0].id;
+                    } else if (dadosNFe.transportadora.nome) {
+                        // Criar transportadora automaticamente
+                        const [novaTransp] = await db.query(
+                            'INSERT INTO transportadoras (empresa_id, nome, cnpj) VALUES (?, ?, ?)',
+                            [req.usuario.empresa_id, dadosNFe.transportadora.nome, dadosNFe.transportadora.cnpj]
+                        );
+                        transportadoraId = novaTransp.insertId;
+                    }
+                }
+
+                res.json({
+                    success: true,
+                    dados: {
+                        ...dadosNFe,
+                        fornecedor_id: fornecedorId,
+                        transportadora_id: transportadoraId
+                    }
+                });
+
+            } catch (parseError) {
+                console.error('Erro ao processar dados da NF-e:', parseError);
+                res.status(500).json({ error: 'Erro ao processar dados da NF-e' });
+            }
+        });
+
+    } catch (error) {
+        console.error('Erro ao processar XML:', error);
+        res.status(500).json({ error: 'Erro ao processar arquivo XML' });
+    }
+});
+
 // POST - Criar recebimento
 app.post('/api/recebimentos', verificarToken, async (req, res) => {
     try {
@@ -1693,13 +1834,13 @@ app.post('/api/recebimentos', verificarToken, async (req, res) => {
             fornecedor_id,
             transportadora_id,
             numero_nota_fiscal,
+            data_emissao,
             filial_chegada_id,
             filial_destino_id,
             volumes,
             peso_total,
             observacoes,
-            urgente,
-            data_prevista
+            urgente
         } = req.body;
         
         const codigo = await gerarCodigoRecebimento(req.usuario.empresa_id);
@@ -1707,13 +1848,13 @@ app.post('/api/recebimentos', verificarToken, async (req, res) => {
         const [result] = await db.query(`
             INSERT INTO recebimentos_fabrica (
                 empresa_id, codigo, fornecedor_id, transportadora_id, numero_nota_fiscal,
-                filial_chegada_id, filial_destino_id, volumes, peso_total, observacoes,
-                urgente, data_prevista, usuario_cadastro_id, status, reserva
+                data_emissao, filial_chegada_id, filial_destino_id, volumes, peso_total, observacoes,
+                urgente, usuario_cadastro_id, status, reserva
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aguardando', 'pendente')
         `, [
             req.usuario.empresa_id, codigo, fornecedor_id, transportadora_id, numero_nota_fiscal,
-            filial_chegada_id, filial_destino_id, volumes || 1, peso_total, observacoes,
-            urgente || false, data_prevista, req.usuario.id
+            data_emissao, filial_chegada_id, filial_destino_id, volumes || 1, peso_total, observacoes,
+            urgente || false, req.usuario.id
         ]);
         
         res.status(201).json({ 
@@ -1734,25 +1875,25 @@ app.put('/api/recebimentos/:id', verificarToken, async (req, res) => {
             fornecedor_id,
             transportadora_id,
             numero_nota_fiscal,
+            data_emissao,
             filial_chegada_id,
             filial_destino_id,
             volumes,
             peso_total,
             observacoes,
-            urgente,
-            data_prevista
+            urgente
         } = req.body;
         
         await db.query(`
             UPDATE recebimentos_fabrica SET
-                fornecedor_id = ?, transportadora_id = ?, numero_nota_fiscal = ?,
+                fornecedor_id = ?, transportadora_id = ?, numero_nota_fiscal = ?, data_emissao = ?,
                 filial_chegada_id = ?, filial_destino_id = ?, volumes = ?, peso_total = ?,
-                observacoes = ?, urgente = ?, data_prevista = ?
+                observacoes = ?, urgente = ?
             WHERE id = ? AND empresa_id = ?
         `, [
-            fornecedor_id, transportadora_id, numero_nota_fiscal,
+            fornecedor_id, transportadora_id, numero_nota_fiscal, data_emissao,
             filial_chegada_id, filial_destino_id, volumes, peso_total,
-            observacoes, urgente, data_prevista,
+            observacoes, urgente,
             req.params.id, req.usuario.empresa_id
         ]);
         
@@ -1763,10 +1904,24 @@ app.put('/api/recebimentos/:id', verificarToken, async (req, res) => {
     }
 });
 
-// POST - Registrar chegada (mudar status para 'recebido')
+// POST - Etapa 2: Confirmação de Recebimento (volumes)
+// Usuário informa onde chegou, quantidade de volumes e se há divergência de volumes
 app.post('/api/recebimentos/:id/receber', verificarToken, async (req, res) => {
     try {
-        const { filial_recebimento_id, volumes_recebidos, situacao, observacao_recebimento, itens_faltando, itens_sobrando } = req.body;
+        const { 
+            filial_recebimento_id, 
+            volumes_recebidos, 
+            divergencia_volumes,
+            volumes_divergencia,
+            observacao_recebimento 
+        } = req.body;
+        
+        // Determinar situação baseado na divergência de volumes
+        // Se volumes_divergencia < 0 = faltando, > 0 = sobrando, = 0 = ok
+        let situacao = 'ok';
+        if (divergencia_volumes && volumes_divergencia) {
+            situacao = parseInt(volumes_divergencia) < 0 ? 'faltando' : 'sobrando';
+        }
         
         await db.query(`
             UPDATE recebimentos_fabrica SET
@@ -1775,38 +1930,24 @@ app.post('/api/recebimentos/:id/receber', verificarToken, async (req, res) => {
                 usuario_recebimento_id = ?,
                 filial_recebimento_id = ?,
                 volumes_recebidos = ?,
-                situacao_recebimento = ?,
-                observacao_recebimento = ?
+                divergencia_volumes = ?,
+                volumes_divergencia = ?,
+                observacao_recebimento = ?,
+                situacao_recebimento = ?
             WHERE id = ? AND empresa_id = ? AND status = 'aguardando'
-        `, [req.usuario.id, filial_recebimento_id, volumes_recebidos, situacao || 'ok', observacao_recebimento || null, req.params.id, req.usuario.empresa_id]);
+        `, [
+            req.usuario.id, 
+            filial_recebimento_id, 
+            volumes_recebidos,
+            divergencia_volumes || false,
+            volumes_divergencia || 0,
+            observacao_recebimento || null,
+            situacao,
+            req.params.id, 
+            req.usuario.empresa_id
+        ]);
         
-        // Salvar itens de divergência (se houver)
-        if (situacao === 'divergencia') {
-            // Remover divergências anteriores (caso de reprocessamento)
-            await db.query('DELETE FROM recebimento_divergencias WHERE recebimento_id = ?', [req.params.id]);
-            
-            // Inserir itens faltando
-            if (itens_faltando && itens_faltando.length > 0) {
-                for (const item of itens_faltando) {
-                    await db.query(
-                        'INSERT INTO recebimento_divergencias (recebimento_id, tipo, codigo_referencia, quantidade) VALUES (?, ?, ?, ?)',
-                        [req.params.id, 'faltando', item.codigo, item.quantidade]
-                    );
-                }
-            }
-            
-            // Inserir itens sobrando
-            if (itens_sobrando && itens_sobrando.length > 0) {
-                for (const item of itens_sobrando) {
-                    await db.query(
-                        'INSERT INTO recebimento_divergencias (recebimento_id, tipo, codigo_referencia, quantidade) VALUES (?, ?, ?, ?)',
-                        [req.params.id, 'sobrando', item.codigo, item.quantidade]
-                    );
-                }
-            }
-        }
-        
-        res.json({ success: true, message: 'Recebimento registrado' });
+        res.json({ success: true, message: 'Recebimento confirmado! Aguardando conferência de produtos.' });
     } catch (error) {
         console.error('Erro ao registrar recebimento:', error);
         res.status(500).json({ error: 'Erro ao registrar recebimento' });
@@ -1829,32 +1970,97 @@ app.post('/api/recebimentos/:id/resolver-divergencia', verificarToken, async (re
     }
 });
 
-// POST - Conferir recebimento (mudar status para 'conferido')
+// POST - Etapa 3: Conferência de Produtos
+// Usuário confere os produtos e informa códigos faltando/sobrando
 app.post('/api/recebimentos/:id/conferir', verificarToken, async (req, res) => {
     try {
+        const { 
+            divergencia_produtos,
+            itens_faltando,
+            itens_sobrando,
+            observacao_conferencia 
+        } = req.body;
+        
+        // Na conferência, mantemos a situação anterior (faltando/sobrando de volumes)
+        // ou marcamos como divergência se houver produtos faltando/sobrando
         await db.query(`
             UPDATE recebimentos_fabrica SET
                 status = 'conferido',
                 data_conferencia = NOW(),
-                usuario_conferencia_id = ?
+                usuario_conferencia_id = ?,
+                divergencia_produtos = ?,
+                observacao_conferencia = ?
             WHERE id = ? AND empresa_id = ? AND status = 'recebido'
-        `, [req.usuario.id, req.params.id, req.usuario.empresa_id]);
+        `, [
+            req.usuario.id, 
+            divergencia_produtos || false,
+            observacao_conferencia || null,
+            req.params.id, 
+            req.usuario.empresa_id
+        ]);
         
-        res.json({ success: true, message: 'Conferência registrada' });
+        // Salvar itens de divergência de produtos (se houver)
+        if (divergencia_produtos) {
+            // Remover divergências anteriores de conferência
+            await db.query('DELETE FROM recebimento_divergencias WHERE recebimento_id = ? AND etapa = ?', [req.params.id, 'conferencia']);
+            
+            // Inserir itens faltando
+            if (itens_faltando && itens_faltando.length > 0) {
+                for (const item of itens_faltando) {
+                    await db.query(
+                        'INSERT INTO recebimento_divergencias (recebimento_id, etapa, tipo, codigo_referencia, quantidade) VALUES (?, ?, ?, ?, ?)',
+                        [req.params.id, 'conferencia', 'faltando', item.codigo, item.quantidade]
+                    );
+                }
+            }
+            
+            // Inserir itens sobrando
+            if (itens_sobrando && itens_sobrando.length > 0) {
+                for (const item of itens_sobrando) {
+                    await db.query(
+                        'INSERT INTO recebimento_divergencias (recebimento_id, etapa, tipo, codigo_referencia, quantidade) VALUES (?, ?, ?, ?, ?)',
+                        [req.params.id, 'conferencia', 'sobrando', item.codigo, item.quantidade]
+                    );
+                }
+            }
+        }
+        
+        res.json({ success: true, message: 'Conferência registrada! Aguardando confirmação da filial de origem.' });
     } catch (error) {
         console.error('Erro ao conferir recebimento:', error);
         res.status(500).json({ error: 'Erro ao conferir recebimento' });
     }
 });
 
-// POST - Confirmar chegada no destino final
+// POST - Etapa 4: Filial de Origem Confirma o Recebimento (Finalização)
+app.post('/api/recebimentos/:id/confirmar-origem', verificarToken, async (req, res) => {
+    try {
+        const { observacao_confirmacao } = req.body;
+        
+        await db.query(`
+            UPDATE recebimentos_fabrica SET
+                status = 'finalizado',
+                data_confirmacao_origem = NOW(),
+                usuario_confirmacao_origem_id = ?,
+                observacao_confirmacao_origem = ?
+            WHERE id = ? AND empresa_id = ? AND status = 'conferido'
+        `, [req.usuario.id, observacao_confirmacao || null, req.params.id, req.usuario.empresa_id]);
+        
+        res.json({ success: true, message: 'Recebimento finalizado com sucesso!' });
+    } catch (error) {
+        console.error('Erro ao confirmar recebimento:', error);
+        res.status(500).json({ error: 'Erro ao confirmar recebimento' });
+    }
+});
+
+// POST - Confirmar chegada no destino final (mantido para compatibilidade)
 app.post('/api/recebimentos/:id/chegada-destino', verificarToken, async (req, res) => {
     try {
         await db.query(`
             UPDATE recebimentos_fabrica SET
                 data_chegada_destino = NOW(),
                 usuario_chegada_destino_id = ?
-            WHERE id = ? AND empresa_id = ? AND status = 'conferido'
+            WHERE id = ? AND empresa_id = ?
         `, [req.usuario.id, req.params.id, req.usuario.empresa_id]);
         
         res.json({ success: true, message: 'Chegada no destino confirmada' });

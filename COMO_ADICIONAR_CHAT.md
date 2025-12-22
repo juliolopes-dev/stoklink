@@ -38,7 +38,7 @@ DESCRIBE mensagens;
 ```
 
 Deve aparecer a tabela com os campos:
-- `id`
+-  id`
 - `empresa_id`
 - `usuario_id`
 - `mensagem`

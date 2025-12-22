@@ -1098,3 +1098,13 @@ i[data-lucide] {
 .btn-danger:hover {
     background: #c82333;
 }
+
+/* Animação de loading (spinner) */
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}

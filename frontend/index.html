@@ -422,6 +422,32 @@
             <h2 id="receb-cadastro-titulo"><i data-lucide="file-plus" style="width: 28px; height: 28px; margin-right: 10px;"></i>Cadastrar NF</h2>
             <p class="subtitle" id="receb-cadastro-subtitulo">Cadastre a NF antes da mercadoria chegar (setor de Compras).</p>
             
+            <!-- Upload de XML -->
+            <div class="card" style="margin-bottom: 20px; border-left: 4px solid #3498db; background: linear-gradient(135deg, #f8f9fa, #e3f2fd);">
+                <div class="card-header" style="color: #3498db;">
+                    <i data-lucide="upload"></i>
+                    <span>Importar XML da NF-e (Automático)</span>
+                </div>
+                <div style="padding: 15px;">
+                    <p style="margin-bottom: 15px; color: #555;">Faça upload do arquivo XML da NF-e para preencher automaticamente os dados do formulário.</p>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="file" id="xml-upload-input" accept=".xml" style="display: none;">
+                        <button type="button" class="btn btn-primary" id="btn-upload-xml">
+                            <i data-lucide="file-up"></i> Selecionar Arquivo XML
+                        </button>
+                        <span id="xml-filename" style="color: #666; font-size: 14px;"></span>
+                    </div>
+                    <div id="xml-loading" style="display: none; margin-top: 15px; color: #3498db;">
+                        <i data-lucide="loader" style="animation: spin 1s linear infinite;"></i>
+                        Processando XML...
+                    </div>
+                    <div id="xml-success" style="display: none; margin-top: 15px; padding: 10px; background: #d4edda; border-radius: 4px; color: #155724;">
+                        <i data-lucide="check-circle"></i>
+                        <span id="xml-success-message">XML processado com sucesso!</span>
+                    </div>
+                </div>
+            </div>
+            
             <form id="recebimento-form">
                 <!-- Dados da NF -->
                 <div class="card">
@@ -486,15 +512,10 @@
                     </div>
                 </div>
 
-                <!-- Datas e Controle -->
+                <!-- Controle -->
                 <div class="card">
-                    <div class="card-header"><i data-lucide="calendar"></i>Previsão e Controle</div>
+                    <div class="card-header"><i data-lucide="settings"></i>Controle</div>
                     <div class="form-grid">
-                        <div class="form-group">
-                            <label for="receb-data-prevista">Data Prevista de Chegada</label>
-                            <input type="date" id="receb-data-prevista">
-                            <small style="color: #6c757d;">Opcional - para cálculo de média de dias</small>
-                        </div>
                         <div class="form-group">
                             <label for="receb-urgencia">Urgência *</label>
                             <select id="receb-urgencia" required>
@@ -540,6 +561,9 @@
                     <p class="subtitle">Detalhes do recebimento de fábrica</p>
                 </div>
                 <div style="display: flex; gap: 10px; align-items: center;">
+                    <button class="btn btn-primary" onclick="abrirEspelhoNF()" title="Ver espelho completo da NF">
+                        <i data-lucide="file-text"></i> Espelho da NF
+                    </button>
                     <span id="receb-detalhe-reserva-tag" class="status-tag"></span>
                     <span id="receb-detalhe-status-tag" class="status-tag"></span>
                 </div>
@@ -663,12 +687,12 @@
         </div>
     </div>
 
-    <!-- Modal de Recebimento de Fábrica -->
+    <!-- Modal de Recebimento de Fábrica - ETAPA 2: Confirmação de Volumes -->
     <div id="recebimento-modal" class="modal-overlay">
         <div class="modal-container" style="max-width: 500px;">
             <div class="modal-header">
                 <div class="modal-icon info">📦</div>
-                <h3 id="recebimento-modal-titulo">Registrar Recebimento</h3>
+                <h3 id="recebimento-modal-titulo">Etapa 2: Confirmar Recebimento</h3>
             </div>
             <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                 <p id="recebimento-modal-info" style="margin-bottom: 15px; color: #666;"></p>
@@ -688,22 +712,61 @@
                 </div>
                 
                 <div class="form-group">
-                    <label for="recebimento-situacao">Situação da Mercadoria</label>
-                    <select id="recebimento-situacao" onchange="toggleDivergenciaFields()">
-                        <option value="ok">✅ OK - Conforme</option>
-                        <option value="divergencia">⚠️ Divergência</option>
-                    </select>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="recebimento-divergencia-volumes" onchange="toggleDivergenciaVolumes()" style="width: 18px; height: 18px; cursor: pointer;">
+                        <span>⚠️ Volumes com divergência (quantidade diferente do esperado)</span>
+                    </label>
                 </div>
                 
-                <!-- Campos de Divergência (aparecem quando situação = divergência) -->
-                <div id="divergencia-fields" style="display: none;">
+                <!-- Campos de Divergência de Volumes -->
+                <div id="divergencia-volumes-fields" style="display: none;">
+                    <div class="form-group" style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                        <label for="recebimento-volumes-divergencia" style="color: #856404; font-weight: 600;">
+                            Quantos volumes estão faltando/sobrando?
+                        </label>
+                        <input type="number" id="recebimento-volumes-divergencia" placeholder="Ex: -2 (faltando) ou +3 (sobrando)" style="margin-top: 10px;">
+                        <small style="color: #856404;">Use número negativo para faltando, positivo para sobrando</small>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="recebimento-observacao">Observações</label>
+                    <textarea id="recebimento-observacao" rows="3" placeholder="Observações adicionais (opcional)..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="recebimento-btn-cancelar">Cancelar</button>
+                <button class="btn btn-success" id="recebimento-btn-confirmar"><i data-lucide="package-check"></i> Confirmar Recebimento</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Conferência - ETAPA 3: Conferência de Produtos -->
+    <div id="conferencia-modal" class="modal-overlay">
+        <div class="modal-container" style="max-width: 550px;">
+            <div class="modal-header">
+                <div class="modal-icon info">🔍</div>
+                <h3 id="conferencia-modal-titulo">Etapa 3: Conferência de Produtos</h3>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <p id="conferencia-modal-info" style="margin-bottom: 15px; color: #666;"></p>
+                
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="conferencia-divergencia-produtos" onchange="toggleDivergenciaProdutos()" style="width: 18px; height: 18px; cursor: pointer;">
+                        <span>⚠️ Produtos com divergência (códigos faltando ou sobrando)</span>
+                    </label>
+                </div>
+                
+                <!-- Campos de Divergência de Produtos -->
+                <div id="divergencia-produtos-fields" style="display: none;">
                     <!-- Itens Faltando -->
                     <div class="form-group" style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
                         <label style="color: #856404; font-weight: 600; margin-bottom: 10px; display: block;">
-                            ⚠️ Itens Faltando
+                            ⚠️ Produtos Faltando
                         </label>
                         <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                            <input type="text" id="input-faltando-codigo" placeholder="Cód. Ref" style="flex: 2; padding: 8px; border: 1px solid #f0ad4e; border-radius: 4px;" onkeypress="handleEnterDivergencia(event, 'faltando')">
+                            <input type="text" id="input-faltando-codigo" placeholder="Código do Produto" style="flex: 2; padding: 8px; border: 1px solid #f0ad4e; border-radius: 4px;" onkeypress="handleEnterDivergencia(event, 'faltando')">
                             <input type="number" id="input-faltando-qtd" placeholder="Qtd" value="1" min="1" style="flex: 1; padding: 8px; border: 1px solid #f0ad4e; border-radius: 4px; max-width: 80px;" onkeypress="handleEnterDivergencia(event, 'faltando')">
                             <button type="button" class="btn btn-sm btn-warning" onclick="adicionarItemDivergencia('faltando')" style="padding: 8px 12px;">
                                 <i data-lucide="plus" style="width: 16px; height: 16px;"></i>
@@ -713,7 +776,7 @@
                             <table id="tabela-faltando" style="width: 100%; border-collapse: collapse;">
                                 <thead style="position: sticky; top: 0; z-index: 1;">
                                     <tr style="background: #f0ad4e; color: #fff;">
-                                        <th style="padding: 8px; text-align: left;">Cód. Ref</th>
+                                        <th style="padding: 8px; text-align: left;">Código</th>
                                         <th style="padding: 8px; text-align: center; width: 80px;">Qtd</th>
                                         <th style="padding: 8px; text-align: center; width: 50px;"></th>
                                     </tr>
@@ -726,10 +789,10 @@
                     <!-- Itens Sobrando -->
                     <div class="form-group" style="background: #d1ecf1; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
                         <label style="color: #0c5460; font-weight: 600; margin-bottom: 10px; display: block;">
-                            📦 Itens Sobrando
+                            📦 Produtos Sobrando
                         </label>
                         <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                            <input type="text" id="input-sobrando-codigo" placeholder="Cód. Ref" style="flex: 2; padding: 8px; border: 1px solid #17a2b8; border-radius: 4px;" onkeypress="handleEnterDivergencia(event, 'sobrando')">
+                            <input type="text" id="input-sobrando-codigo" placeholder="Código do Produto" style="flex: 2; padding: 8px; border: 1px solid #17a2b8; border-radius: 4px;" onkeypress="handleEnterDivergencia(event, 'sobrando')">
                             <input type="number" id="input-sobrando-qtd" placeholder="Qtd" value="1" min="1" style="flex: 1; padding: 8px; border: 1px solid #17a2b8; border-radius: 4px; max-width: 80px;" onkeypress="handleEnterDivergencia(event, 'sobrando')">
                             <button type="button" class="btn btn-sm btn-info" onclick="adicionarItemDivergencia('sobrando')" style="padding: 8px 12px;">
                                 <i data-lucide="plus" style="width: 16px; height: 16px;"></i>
@@ -739,7 +802,7 @@
                             <table id="tabela-sobrando" style="width: 100%; border-collapse: collapse;">
                                 <thead style="position: sticky; top: 0; z-index: 1;">
                                     <tr style="background: #17a2b8; color: #fff;">
-                                        <th style="padding: 8px; text-align: left;">Cód. Ref</th>
+                                        <th style="padding: 8px; text-align: left;">Código</th>
                                         <th style="padding: 8px; text-align: center; width: 80px;">Qtd</th>
                                         <th style="padding: 8px; text-align: center; width: 50px;"></th>
                                     </tr>
@@ -751,13 +814,61 @@
                 </div>
                 
                 <div class="form-group">
-                    <label for="recebimento-observacao">Observações</label>
-                    <textarea id="recebimento-observacao" rows="3" placeholder="Observações adicionais (opcional)..."></textarea>
+                    <label for="conferencia-observacao">Observações da Conferência</label>
+                    <textarea id="conferencia-observacao" rows="3" placeholder="Observações sobre a conferência (opcional)..."></textarea>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" id="recebimento-btn-cancelar">Cancelar</button>
-                <button class="btn btn-success" id="recebimento-btn-confirmar"><i data-lucide="package-check"></i> Confirmar Recebimento</button>
+                <button class="btn btn-secondary" id="conferencia-btn-cancelar">Cancelar</button>
+                <button class="btn btn-primary" id="conferencia-btn-confirmar"><i data-lucide="check-circle"></i> Confirmar Conferência</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Confirmação Origem - ETAPA 4: Filial Origem Confirma -->
+    <div id="confirmacao-origem-modal" class="modal-overlay">
+        <div class="modal-container" style="max-width: 450px;">
+            <div class="modal-header">
+                <div class="modal-icon success">✅</div>
+                <h3>Etapa 4: Confirmar Recebimento</h3>
+            </div>
+            <div class="modal-body">
+                <p id="confirmacao-origem-info" style="margin-bottom: 15px; color: #666;"></p>
+                
+                <div id="confirmacao-origem-divergencias" style="display: none; margin-bottom: 15px;"></div>
+                
+                <div class="form-group">
+                    <label for="confirmacao-origem-observacao">Observações (opcional)</label>
+                    <textarea id="confirmacao-origem-observacao" rows="3" placeholder="Observações finais..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="confirmacao-origem-btn-cancelar">Cancelar</button>
+                <button class="btn btn-success" id="confirmacao-origem-btn-confirmar"><i data-lucide="check"></i> Finalizar Recebimento</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Espelho da NF -->
+    <div id="espelho-nf-modal" class="modal-overlay">
+        <div class="modal-container" style="max-width: 800px;">
+            <div class="modal-header">
+                <div class="modal-icon info">📄</div>
+                <h3>Espelho da Nota Fiscal</h3>
+            </div>
+            <div class="modal-body" style="max-height: 80vh; overflow-y: auto;">
+                <div id="espelho-nf-content" style="font-family: 'Courier New', monospace; background: white; padding: 20px; border: 2px solid #333;">
+                    <!-- Conteúdo será preenchido dinamicamente -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="fecharEspelhoNF()">Fechar</button>
+                <button class="btn btn-primary" onclick="imprimirEspelhoNF()">
+                    <i data-lucide="printer"></i> Imprimir
+                </button>
+                <button class="btn btn-success" onclick="copiarDadosNF()">
+                    <i data-lucide="copy"></i> Copiar Dados
+                </button>
             </div>
         </div>
     </div>
@@ -775,7 +886,8 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     
     <!-- Script JavaScript -->
-    <script src="app.js?v=55"></script>
+    <script src="app.js?v=56"></script>
+    <script src="espelho-nf.js?v=1"></script>
 </body>
 </html>
 
